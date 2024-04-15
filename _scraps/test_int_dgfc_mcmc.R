@@ -11,8 +11,8 @@ source("_helpers/_helpers.R")
 
 set.seed(8675309)
 
-n <- 100
-Y <- cbind(rnorm(n), rpois(n, lambda = 10))
+n <- 200
+Y <- cbind(rt(n, df = 1), rpois(n, lambda = 10))
 p <- ncol(Y)
 H = 5
 
@@ -34,3 +34,6 @@ par(mfrow = c(1,1))
 
 plot(ecdf(Y[, i]), cex = 0.1, col = "black")
 plot_ma_band(draws$ma[[i]][, 1, 1], draws$ma[[i]][, 2, ], a, rgb(0, 0, 1, 0.1))
+x_grid = seq(min(Y[, i]), max(Y[, i]), length.out = 500)
+y_vals = pt(x_grid, df = 1)
+lines(x_grid, y_vals, col = "red")
