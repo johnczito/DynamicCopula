@@ -44,6 +44,35 @@ stationary_var1_covariance <- function(A, SU){
   return(matrix(solve(diag(n^2) - A %x% A, c(SU)), n, n))
 }
 
+normalize_var1_params <- function(A, SU){
+  n = ncol(A)
+  O0 = stationary_var1_covariance(A, SU)
+  O1 = A %*% O0
+  O = cbind(rbind(O0, t(O1)), rbind(O1, O0))
+  C = cov2cor(O)
+  C0 = C[1:n, 1:n]
+  C1 = C[(n+1):(2*n), 1:n]
+  G = C1 %*% solve(C0)
+  S = matrix((diag(n*n) - G %x% G) %*% c(C0), n, n)
+  return(list(G = G, S = S))
+}
+
+full_var1_covariance <- function(T, A, SU){
+  n = ncol(A)
+  O = matrix(0, T*n, T*n)
+  Slab = matrix(0, T*n, n)
+  O0 = stationary_var1_covariance(A, SU)
+  Slab[1:n, ] = O0
+  for(tt in 1:(T-1)){
+    Slab[(tt*n + 1):((tt+1)*n), ] = A %*% Slab[((tt-1)*n + 1):(tt*n), ]
+  }
+  for(tt in 1:T){
+    O[((tt-1)*n + 1):(T*n), ((tt-1)*n + 1):(tt*n)] = Slab[1:((T - tt + 1)*n), ]
+  }
+  O[upper.tri(O, diag = FALSE)] = t(O)[upper.tri(t(O), diag = FALSE)]
+  return(O)
+}
+
 simulate_nonexplosive_var_params <- function(n, p, g0, O0){
 # Think of VAR(p) parameters concatenated into a matrix G = [G1 G2 ... Gp].
 # Simulate vec(G) ~ N(g0, O0) truncated to have eigenvalues in the unit circle.

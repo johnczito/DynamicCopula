@@ -129,6 +129,18 @@ simulate_stationary_varma <- function(T, m, ARarray, MAarray, S){
   return(Y)
 }
 
+simulate_varma_copula <- function(T, Finv, ARarray, MAarray, S){
+  n = length(Finv)
+  m = numeric(n)
+  Z <- simulate_stationary_varma(T, m, ARarray, MAarray, S)
+  W = varma_stationary_params(m, ARarray, MAarray, S)$VARMAcov
+  Y = matrix(0, T, n)
+  for(i in 1:n){
+    Y[, i] = Finv[[i]](pnorm(Z[, i], mean = 0, sd = sqrt(W[i, i])))
+  }
+  return(Y)
+}
+
 # Notes:
 # - initialization of VARMA in simulator ought to incorporate the 
 #   autocorrelation between the initial conditions.
