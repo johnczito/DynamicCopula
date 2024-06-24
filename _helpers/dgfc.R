@@ -26,7 +26,7 @@ simulate_dgfc <- function(T, Finv, G, S, L, M){
   return(Y)
 }
 
-DGFC.mcmc <- function(Y, prior = NULL, init = NULL, ndraw = 1000, burn = 0, thin = 1){
+DGFC.mcmc <- function(Y, k.star = ceiling(.7 * ncol(Y)), prior = NULL, init = NULL, ndraw = 1000, burn = 0, thin = 1){
   # ----------------------------------------------------------------------------
   # dimensions
   # ----------------------------------------------------------------------------
@@ -44,7 +44,7 @@ DGFC.mcmc <- function(Y, prior = NULL, init = NULL, ndraw = 1000, burn = 0, thin
   
   if(is.null(prior)){
     
-    k.star = ceiling(.7 * n)
+    #k.star = ceiling(.7 * n)
     
     # MGP
     # local shrinkage
@@ -253,7 +253,7 @@ DGFC.mcmc <- function(Y, prior = NULL, init = NULL, ndraw = 1000, burn = 0, thin
   
 }
 
-DGFC.forecast <- function(H, draws){
+DGFC.forecast <- function(H, draws, use_spline = FALSE){
   # ----------------------------------------------------
   # dims
   # ----------------------------------------------------
@@ -297,8 +297,16 @@ DGFC.forecast <- function(H, draws){
       u = pnorm(new_Z[, j], mean = 0, sd = sqrt(Zcov[j, j]))
       xj = draws$ma[[j]][, 1, m]
       Fxj = draws$ma[[j]][, 2, m]
-      Fxj[length(xj)] = 1
-      Ypred[, j, m] = sapply(u, inverse_cdf, xj, Fxj)
+      if(use_spline == TRUE){
+        # JZ: only makes sense for continuous data!
+        F_inv = splinefun(c(0, Fxj, 1),
+                          c(min(xj) - sd(xj), xj, max(xj) + sd(xj)),
+                          method = c("monoH.FC"))
+        Ypred[, j, m] = sapply(u, F_inv)
+      }else{
+        Fxj[length(xj)] = 1
+        Ypred[, j, m] = sapply(u, inverse_cdf, xj, Fxj)
+      }
     }
     
   }

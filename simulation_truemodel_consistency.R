@@ -11,12 +11,12 @@ source("_helpers/_helpers.R")
 
 n = 2
 p = 1
-sample.sizes <- 25 * 2 ^ (0:5)
+sample.sizes <- 25 * 2 ^ (0:7)
 Tmax <- max(sample.sizes)
 Nsamp <- length(sample.sizes)
-ndraw = 1000
-burn = 5000
-thin = 10
+ndraw = 5000
+burns = c(rep(5000, ceiling(Nsamp / 2)), rep(0, Nsamp - ceiling(Nsamp / 2)))
+thins = c(rep(6, ceiling(Nsamp / 2)), rep(1, Nsamp - ceiling(Nsamp / 2)))
 band_col = rgb(0, 0, 1, 0.1)
 
 set.seed(8675309)
@@ -33,12 +33,14 @@ F1 <- function(x){pgamma(x, shape = 1, rate = 1)}
 F2 <- function(x){pst(x, alpha = 2, nu = 3)}
 F <- c(F1, F2)
 
-A <- simulate_nonexplosive_var_params(n, p, numeric(n*n*p), diag(n*n*p))
+A <- simulate_nonexplosive_var_params(n, p, numeric(n*n*p), 0.1 * diag(n*n*p))
 SU <- riwish(n + 1, diag(n))
 GS = normalize_var1_params(A, SU)
 G = GS$G
 S = GS$S
 O0 = stationary_var1_covariance(G, S)
+
+abs(eigen(G)$values)
 
 # ==============================================================================
 # Simulate fake data
@@ -59,9 +61,7 @@ mystart = Sys.time()
 
 #post_draws = DGC.mcmc(Y, ndraw = ndraw, thin = thin, burn = burn)
 
-endstart = Sys.time()
-
-endstart - mystart
+myend = Sys.time()
 
 # ==============================================================================
 # run MCMC on an expanding window of data
@@ -72,12 +72,15 @@ G_draws = array(0, c(n, n, ndraw, Nsamp))
 Sigma_draws = array(0, c(n, n, ndraw, Nsamp))
 
 for(l in 1:Nsamp){
+  mystart = Sys.time()
   T <- sample.sizes[l]
-  post_draws <- DGC.mcmc(Y[1:T, ], ndraw = ndraw, thin = thin, burn = burn)
+  post_draws <- DGC.mcmc(Y[1:T, ], ndraw = ndraw, thin = thins[l], burn = burns[l])
   MAdraws[[l]] = post_draws$ma
   G_draws[, , , l] = post_draws$G
   Sigma_draws[, , , l] = post_draws$S
+  myend = Sys.time()
   message(paste("Stage ", l, " of ", Nsamp, " done!", sep = ""))
+  print(myend - mystart)
 }
 
 # ==============================================================================
@@ -86,7 +89,7 @@ for(l in 1:Nsamp){
 
 # fix this when visualizing the discrete MA and everything
 
-i = 2
+i = 1
 a = seq(0.1, 0.9, length.out = 9)#c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
 x_grid = seq(min(Y[, i]), max(Y[, i]), length.out = 500)
 y_vals = F[[i]](x_grid)
@@ -119,6 +122,10 @@ plot(1:ndraw, MAdraws[[Nsamp]][[i]][12, 2, ], type ="l")
 # plot posterior convergence for parameters
 # ==============================================================================
 
+png(paste("_images/truemodel_parameter_consistency_ndraw_", 
+          ndraw, "_burn_", max(burns), "_thin_", max(thins), ".png", sep = ""), 
+    width = 4, height = 8, units = "in", res = 1000)
+
 par(mfrow = c(2 * n, n), mar = c(2, 2, 1, 1))
 
 for(i in 1:n){
@@ -149,7 +156,8 @@ for(i in 1:n){
     }
     
     abline(h = true_value, col = "red", lwd = 2)
-    legend("bottomright", paste("G[", i, ", ", j, "]", sep = ""), bty = "n")
+    legend("bottomright", paste("G[", i, ", ", j, "]", sep = ""), bty = "n",
+           cex = 1.5)
     
   }
 }
@@ -175,28 +183,28 @@ for(i in 1:n){
               xaxt = "n",
               main = "")
       abline(h = true_value, col = "red", lwd = 2)
-      legend("topright", paste("Sigma[", i, ", ", j, "]", sep = ""), bty = "n")
+      legend("bottomright", paste("Sigma[", i, ", ", j, "]", sep = ""), bty = "n",
+             cex = 1.5)
     }
     
   }
 }
 
+dev.off()
+
+
+png(paste("_images/truemodel_cdf_consistency_ndraw_", 
+          ndraw, "_burn_", max(burns), "_thin_", max(thins), ".png", sep = ""), 
+    width = 2, height = 8, units = "in", res = 1000)
+
 par(mfrow = c(4, 1), mar = c(2, 2, 1, 1))
 
 i = 1
-a = seq(0.1, 0.9, length.out = 9)#c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
+a = seq(0.1, 0.9, length.out = 9)
 x_grid = seq(min(Y[, i]), max(Y[, i]), length.out = 500)
 y_vals = F[[i]](x_grid)
 
-#par(mfrow = c(Nsamp, 1), mar = c(2, 2, 2, 2))
-par(mfrow = c(4, 1))
-
-for(l in c(1, 2, 3, 4)){
-  #if(l == Nsamp){
-  #  par(mar = c(2, 1, 0, 1))
-  #}else{
-  #  par(mar = c(0, 1, 0, 1))
-  #}
+for(l in 1:4){
   
   T <- sample.sizes[l]
   
@@ -216,3 +224,4 @@ for(l in c(1, 2, 3, 4)){
   
 }
 
+dev.off()

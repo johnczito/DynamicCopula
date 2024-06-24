@@ -13,28 +13,34 @@ set.seed(8675309)
 
 # data settings
 
-T <- 60
+T <- 300
 n <- 2
 H = 10
 t0 = 10
 nrep = 10
 
 # Which DGP? VARMA, VARCH, VARMA Copula
-dgp <- "VARMA Copula"
+dgp <- "varma_copula"
 
 # sampling settings
 
-dlm_ndraw  = 500
+dlm_ndraw  = 1000
+dlm_burn = 0
+dlm_thin = 1
+
 bvar_ndraw = 1000
-dfc_ndraw  = 500
-nburn = 0
-nthin = 1
+bvar_burn = 0
+bvar_thin = 1
+
+dfc_ndraw  = 1000
+dfc_burn = 0
+dfc_thin = 1
 
 # ==============================================================================
 # Pick DGP and simulate fake data
 # ==============================================================================
 
-if(dgp == "VARMA"){
+if(dgp == "varma"){
   
   p = 3
   q = 6
@@ -48,13 +54,13 @@ if(dgp == "VARMA"){
   
   abs(eigen(companion(AR))$values)
   
-}else if(dgp == "VARCH"){
+}else if(dgp == "varch"){
   
   v = n + 2 + rexp(1)
   A = riwish(n + 1, diag(n))
   Y = simulate_varch(T, v, A)
   
-}else if(dgp == "VARMA copula"){
+}else if(dgp == "varma_copula"){
   
   # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # get stationary distribution
@@ -75,7 +81,7 @@ if(dgp == "VARMA"){
   # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
   n = length(Finv)
-  p = 2
+  p = 1
   q = 1
   
   band_col = rgb(1, 0.6, 0, 0.1)
@@ -97,7 +103,7 @@ if(dgp == "VARMA"){
   # simulate fake data
   # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
-  Y = simulate_varma_copula(Tmax, Finv, ARarray, MAarray, S)
+  Y = simulate_varma_copula(T, Finv, ARarray, MAarray, S)
   
 }
 
@@ -130,7 +136,9 @@ for(t in t0:T){
   # DLM
   # ---------------------------
   
-  for(i in 2:2){
+  mystart <- Sys.time()
+  
+  for(i in 1:n){
     
     outGibbs2 = dlmGibbsDIG(Y[1:t, i],
                             dlmModPoly(order = 1, m0 = 0, C0 = C0),
@@ -139,7 +147,7 @@ for(t in t0:T){
                             shape.theta = shape.theta,
                             rate.theta = rate.theta,
                             n.sample = dlm_ndraw,
-                            thin = nthin,
+                            thin = dlm_thin,
                             ind = 1,
                             save.states = TRUE,
                             progressBar = FALSE)
@@ -157,20 +165,36 @@ for(t in t0:T){
     
   }
   
+  myend <- Sys.time()
+  
+  print(myend - mystart)
+  
   # ---------------------------
   # BVAR
   # ---------------------------
   
+  mystart <- Sys.time()
+  
   my_bvar_model <- bvar(Y[1:t, ], lags = 1, verbose = FALSE,
-                        n_draw = bvar_ndraw * nthin + nburn, n_burn = nburn, n_thin = nthin)
+                        n_draw = bvar_ndraw * bvar_thin + bvar_burn, n_burn = bvar_burn, n_thin = bvar_thin)
   fcast_bvar[, , , t] <- aperm(predict(my_bvar_model, horizon = H)$fcast, c(2, 3, 1))
+  
+  myend <- Sys.time()
+  
+  print(myend - mystart)
   
   # ---------------------------
   # DGFC
   # ---------------------------
   
-  draws = DGFC.mcmc(Y[1:t, ], ndraw = dfc_ndraw, burn = nburn, thin = nthin)
+  mystart <- Sys.time()
+  
+  draws = DGFC.mcmc(Y[1:t, ], ndraw = dfc_ndraw, burn = dfc_burn, thin = dfc_thin)
   fcast_dfc[, , , t] = DGFC.forecast(H, draws)
+  
+  myend <- Sys.time()
+  
+  print(myend - mystart)
   
   message(paste("Stage ", t, " of ", T, " done!", sep = ""))
   
@@ -312,3 +336,130 @@ points(1:H, var_crps, col = var_col, pch = 19)
 points(1:H, dlm_crps, col = dlm_col, pch = 19)
 
 box(lwd = box_lwd)
+
+
+
+# ==============================================================================
+# Plot for slides
+# ==============================================================================
+
+png(paste("_images/", dgp, "_forecast_slides.png", sep = ""), 
+    width = 8, height = 2, units = "in", res = 1000)
+
+par(mfcol = c(1, 4))
+
+dfc_col = "red"
+var_col = "blue"
+dlm_col = "orange"
+a = alpha[2]
+alpha_level = paste("alpha =", a)
+box_lwd = 1.5
+common_margin = 0
+side_mar = 2
+
+# -------------------------
+# Point forecasts
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_mse = dfc_results[, "MSE", alpha_level]
+var_mse = var_results[, "MSE", alpha_level]
+dlm_mse = dlm_results[, "MSE", alpha_level]
+
+L = min(dfc_mse, var_mse, dlm_mse)
+U = max(dfc_mse, var_mse, dlm_mse)
+
+plot(1:H, dfc_mse, type = "l", col = dfc_col, ylim = c(L, U),
+     xlab = "forecast horizon", ylab = "MSFE", main = "MSE", cex.main = 2)
+lines(1:H, var_mse, col = var_col)
+lines(1:H, dlm_mse, col = dlm_col)
+
+points(1:H, dfc_mse, col = dfc_col, pch = 19)
+points(1:H, var_mse, col = var_col, pch = 19)
+points(1:H, dlm_mse, col = dlm_col, pch = 19)
+
+#legend("bottomright", c("BVAR", "DLM", "DGFC"), lty = 1, bty = "n",
+#       col = c(var_col, dlm_col, dfc_col))
+
+box(lwd = box_lwd)
+
+# -------------------------
+# Interval coverage
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_int = dfc_results[, "INT-COV", alpha_level]
+var_int = var_results[, "INT-COV", alpha_level]
+dlm_int = dlm_results[, "INT-COV", alpha_level]
+
+L = min(dfc_int, var_int, dlm_int)
+U = max(dfc_int, var_int, dlm_int)
+
+plot(1:H, dfc_int, type = "l", col = dfc_col, ylim = c(L, U),
+     xlab = "forecast horizon", main = "Interval coverage", cex.main = 2)
+lines(1:H, var_int, col = var_col)
+lines(1:H, dlm_int, col = dlm_col)
+
+
+points(1:H, dfc_int, col = dfc_col, pch = 19)
+points(1:H, var_int, col = var_col, pch = 19)
+points(1:H, dlm_int, col = dlm_col, pch = 19)
+
+abline(h = 1 - a, lty = 2, col = "grey")
+
+box(lwd = box_lwd)
+
+# -------------------------
+# Interval size
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_int = dfc_results[, "INT-SIZE", alpha_level]
+var_int = var_results[, "INT-SIZE", alpha_level]
+dlm_int = dlm_results[, "INT-SIZE", alpha_level]
+
+L = min(dfc_int, var_int, dlm_int)
+U = max(dfc_int, var_int, dlm_int)
+
+plot(1:H, dfc_int, type = "l", col = dfc_col, ylim = c(L, U), 
+     xlab = "forecast horizon", main = "Interval size", cex.main = 2)
+lines(1:H, var_int, col = var_col)
+lines(1:H, dlm_int, col = dlm_col)
+
+
+points(1:H, dfc_int, col = dfc_col, pch = 19)
+points(1:H, var_int, col = var_col, pch = 19)
+points(1:H, dlm_int, col = dlm_col, pch = 19)
+
+box(lwd = box_lwd)
+
+#paste("Score of", alpha_level, "HPD interval")
+
+# -------------------------
+# Density forecasts
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_crps = dfc_results[, "CRPS", alpha_level]
+var_crps = var_results[, "CRPS", alpha_level]
+dlm_crps = dlm_results[, "CRPS", alpha_level]
+
+L = min(dfc_crps, var_crps, dlm_crps)
+U = max(dfc_crps, var_crps, dlm_crps)
+
+plot(1:H, dfc_crps, type = "l", col = dfc_col, ylim = c(L, U),
+     xlab = "forecast horizon", main = "CRPS", cex.main = 2)
+lines(1:H, var_crps, col = var_col)
+lines(1:H, dlm_crps, col = dlm_col)
+
+points(1:H, dfc_crps, col = dfc_col, pch = 19)
+points(1:H, var_crps, col = var_col, pch = 19)
+points(1:H, dlm_crps, col = dlm_col, pch = 19)
+
+box(lwd = box_lwd)
+
+dev.off()
