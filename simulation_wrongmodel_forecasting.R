@@ -20,7 +20,7 @@ t0 = 10
 nrep = 10
 
 # Which DGP? VARMA, VARCH, VARMA Copula
-dgp <- "varma_copula"
+dgp <- "varch"
 
 # sampling settings
 
@@ -138,7 +138,7 @@ for(t in t0:T){
   
   mystart <- Sys.time()
   
-  for(i in 1:n){
+  for(i in n:n){
     
     outGibbs2 = dlmGibbsDIG(Y[1:t, i],
                             dlmModPoly(order = 1, m0 = 0, C0 = C0),
@@ -200,7 +200,73 @@ for(t in t0:T){
   
 }
 
+# ==============================================================================
+# 
+# ==============================================================================
 
+i = 2
+alpha = c(0.05)
+
+dfc_stuff = get_variable_fcasts(i, fcast_dfc)
+var_stuff = get_variable_fcasts(i, fcast_bvar)
+dlm_stuff = get_variable_fcasts(i, fcast_dlm)
+
+dfc_results = forecast_results(Y[(t0 + 1):T, i], dfc_stuff[(t0 + 1):T, , ], alpha)
+var_results = forecast_results(Y[(t0 + 1):T, i], var_stuff[(t0 + 1):T, , ], alpha)
+dlm_results = forecast_results(Y[(t0 + 1):T, i], dlm_stuff[(t0 + 1):T, , ], alpha)
+
+dfc_col = "blue"
+var_col = "red"
+dlm_col = "orange"
+
+png(paste("_images/", dgp, "_forecast_paper.png", sep = ""), 
+    width = 2, height = 6, units = "in", res = 600)
+
+par(mfrow = c(4, 1))
+
+for(metric in c("MSE", "INT-COV", "INT-SIZE", "CRPS")){
+  if (metric == "CRPS"){
+    par(mar = c(4, 4, 0.5, 0.5))
+  }else if (metric == "MSE"){
+    par(mar = c(0.5, 4, 4, 0.5))
+  }else {
+    par(mar = c(0.5, 4, 0.5, 0.5))
+  }
+  
+  dfc_metric = dfc_results[, metric, 1]
+  var_metric = var_results[, metric, 1]
+  dlm_metric = dlm_results[, metric, 1]
+  
+  L = min(dfc_metric, var_metric, dlm_metric)
+  U = max(dfc_metric, var_metric, dlm_metric)
+  
+  plot(1:H, dfc_metric, type = "l", col = dfc_col, ylim = c(L, U), xaxt = "n",
+       xlab = "", ylab = metric, main = "", las = 2)
+  lines(1:H, var_metric, col = var_col)
+  lines(1:H, dlm_metric, col = dlm_col)
+  
+  points(1:H, dfc_metric, col = dfc_col, pch = 19)
+  points(1:H, var_metric, col = var_col, pch = 19)
+  points(1:H, dlm_metric, col = dlm_col, pch = 19)
+  
+  if(metric == "MSE" & dgp == "varma"){
+    legend("bottomright", c("BVAR", "DLM", "DGFC"), lty = 1, bty = "n",
+           col = c(var_col, dlm_col, dfc_col))
+  }
+  
+  if(metric == "CRPS"){
+    axis(1)
+    title(xlab="horizon", line = 2, cex.lab = 1.3)
+    
+  }
+  
+  if(metric == "INT-COV"){
+    abline(h = 1 - alpha, lty = 2, col = "grey")
+  }
+  
+}
+
+dev.off()
 
 # ==============================================================================
 # Get results

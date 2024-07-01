@@ -124,9 +124,9 @@ plot(1:ndraw, MAdraws[[Nsamp]][[i]][12, 2, ], type ="l")
 
 png(paste("_images/truemodel_parameter_consistency_ndraw_", 
           ndraw, "_burn_", max(burns), "_thin_", max(thins), ".png", sep = ""), 
-    width = 4, height = 8, units = "in", res = 1000)
+    width = 6, height = 8, units = "in", res = 1000)
 
-par(mfrow = c(2 * n, n), mar = c(2, 2, 1, 1))
+par(mfrow = c(2 * n, n), mar = c(3, 2, 1, 1))
 
 for(i in 1:n){
   for(j in 1:n){
@@ -139,13 +139,14 @@ for(i in 1:n){
       my_draws[, k] = G_draws[i, j, , k]
     }
     
-    if(i == 1 & j == 1){
+    if(2 == 2){ #i == 1 & j == 1
       boxplot(my_draws, 
               outline = FALSE,
               names = sample.sizes, 
               xlab = "",
               ylab = "",
-              main = "")
+              main = "",
+              las = 3)
     }else{
       boxplot(my_draws, 
               outline = FALSE,
@@ -177,11 +178,12 @@ for(i in 1:n){
       
       boxplot(my_draws, 
               outline = FALSE,
-              names = NULL, 
+              names = sample.sizes, 
               xlab = "",
               ylab = "",
-              xaxt = "n",
-              main = "")
+              #xaxt = "n",
+              main = "",
+              las = 3)
       abline(h = true_value, col = "red", lwd = 2)
       legend("bottomright", paste("Sigma[", i, ", ", j, "]", sep = ""), bty = "n",
              cex = 1.5)

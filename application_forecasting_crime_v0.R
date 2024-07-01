@@ -182,8 +182,8 @@ par(mfcol = c(4, n))
 
 dfc_col = "red"
 var_col = "blue"
-dlm_col = "green"
-nbinom_col = "orange"
+dlm_col = "orange"
+nbinom_col = "green"
 alpha = c(0.01, 0.05, 0.1, 0.25, 0.5)
 a = alpha[3]
 alpha_level = paste("alpha =", a)
@@ -362,3 +362,146 @@ for(i in 1:n){
   
 }
 
+
+
+##################
+
+# for slide
+
+
+
+
+
+i = 1
+
+dfc_stuff = get_variable_fcasts(i, fcast_dfc)
+var_stuff = get_variable_fcasts(i, fcast_bvar)
+dlm_stuff = get_variable_fcasts(i, fcast_pois)
+nbinom_stuff = get_variable_fcasts(i, fcast_nbinom)
+
+dfc_results = forecast_results_discrete(Y[(t0 + 1):T, i], dfc_stuff[(t0 + 1):T, , ], alpha)
+var_results = forecast_results_discrete(Y[(t0 + 1):T, i], var_stuff[(t0 + 1):T, , ], alpha)
+dlm_results = forecast_results_discrete(Y[(t0 + 1):T, i], dlm_stuff[(t0 + 1):T, , ], alpha)
+nbinom_results = forecast_results_discrete(Y[(t0 + 1):T, i], nbinom_stuff[(t0 + 1):T, , ], alpha)
+
+
+png(paste("_images/", var_names[i], "_forecast_slides.png", sep = ""), 
+    width = 8, height = 2, units = "in", res = 1000)
+
+par(mfcol = c(1, 4))
+
+dfc_col = "red"
+var_col = "blue"
+dlm_col = "orange"
+a = alpha[2]
+alpha_level = paste("alpha =", a)
+box_lwd = 1.5
+common_margin = 0
+side_mar = 2
+
+# -------------------------
+# Point forecasts
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_mse = dfc_results[, "MAE", alpha_level]
+var_mse = var_results[, "MAE", alpha_level]
+dlm_mse = dlm_results[, "MAE", alpha_level]
+
+L = min(dfc_mse, var_mse, dlm_mse)
+U = max(dfc_mse, var_mse, dlm_mse)
+
+plot(1:H, dfc_mse, type = "l", col = dfc_col, ylim = c(L, U),
+     xlab = "forecast horizon", ylab = "MSFE", main = "MAE", cex.main = 2)
+lines(1:H, var_mse, col = var_col)
+lines(1:H, dlm_mse, col = dlm_col)
+
+points(1:H, dfc_mse, col = dfc_col, pch = 19)
+points(1:H, var_mse, col = var_col, pch = 19)
+points(1:H, dlm_mse, col = dlm_col, pch = 19)
+
+#legend("bottomright", c("BVAR", "DLM", "DGFC"), lty = 1, bty = "n",
+#       col = c(var_col, dlm_col, dfc_col))
+
+box(lwd = box_lwd)
+
+# -------------------------
+# Interval coverage
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_int = dfc_results[, "INT-COV", alpha_level]
+var_int = var_results[, "INT-COV", alpha_level]
+dlm_int = dlm_results[, "INT-COV", alpha_level]
+
+L = min(dfc_int, var_int, dlm_int)
+U = max(dfc_int, var_int, dlm_int)
+
+plot(1:H, dfc_int, type = "l", col = dfc_col, ylim = c(L, U),
+     xlab = "forecast horizon", main = "Interval coverage", cex.main = 2)
+lines(1:H, var_int, col = var_col)
+lines(1:H, dlm_int, col = dlm_col)
+
+
+points(1:H, dfc_int, col = dfc_col, pch = 19)
+points(1:H, var_int, col = var_col, pch = 19)
+points(1:H, dlm_int, col = dlm_col, pch = 19)
+
+abline(h = 1 - a, lty = 2, col = "grey")
+
+box(lwd = box_lwd)
+
+# -------------------------
+# Interval size
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_int = dfc_results[, "INT-SIZE", alpha_level]
+var_int = var_results[, "INT-SIZE", alpha_level]
+dlm_int = dlm_results[, "INT-SIZE", alpha_level]
+
+L = min(dfc_int, var_int, dlm_int)
+U = max(dfc_int, var_int, dlm_int)
+
+plot(1:H, dfc_int, type = "l", col = dfc_col, ylim = c(L, U), 
+     xlab = "forecast horizon", main = "Interval size", cex.main = 2)
+lines(1:H, var_int, col = var_col)
+lines(1:H, dlm_int, col = dlm_col)
+
+
+points(1:H, dfc_int, col = dfc_col, pch = 19)
+points(1:H, var_int, col = var_col, pch = 19)
+points(1:H, dlm_int, col = dlm_col, pch = 19)
+
+box(lwd = box_lwd)
+
+#paste("Score of", alpha_level, "HPD interval")
+
+# -------------------------
+# Density forecasts
+# -------------------------
+
+par(mar = c(2, 2, 2, 2))
+
+dfc_crps = dfc_results[, "CRPS", alpha_level]
+var_crps = var_results[, "CRPS", alpha_level]
+dlm_crps = dlm_results[, "CRPS", alpha_level]
+
+L = min(dfc_crps, var_crps, dlm_crps)
+U = max(dfc_crps, var_crps, dlm_crps)
+
+plot(1:H, dfc_crps, type = "l", col = dfc_col, ylim = c(L, U),
+     xlab = "forecast horizon", main = "CRPS", cex.main = 2)
+lines(1:H, var_crps, col = var_col)
+lines(1:H, dlm_crps, col = dlm_col)
+
+points(1:H, dfc_crps, col = dfc_col, pch = 19)
+points(1:H, var_crps, col = var_col, pch = 19)
+points(1:H, dlm_crps, col = dlm_col, pch = 19)
+
+box(lwd = box_lwd)
+
+dev.off()
