@@ -20,7 +20,7 @@ t0 = 10
 nrep = 10
 
 # Which DGP? VARMA, VARCH, VARMA Copula
-dgp <- "varch"
+dgp <- "varma_copula"
 
 # sampling settings
 

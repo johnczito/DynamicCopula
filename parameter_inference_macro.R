@@ -255,3 +255,79 @@ for(i in c(9,10,12,13)){
 }
 
 dev.off()
+
+
+
+
+# =======
+# FOR THE DEFENSE
+# =======
+
+
+png("_images/param_inference_macro_corr.png", 
+    width = 4, height = 6, units = "in", res = 650)
+
+par(mfcol = c(2, 1), mar = c(3, 3.75, 0.5, 2))
+
+image.plot(Cmean_upper[1:n, ], col = col_palette[ceiling(500*(1-abs(min(Cmean[1:n, ])))):1000], 
+           main = "", axes = FALSE, legend.mar = 3.5)
+
+locations = seq(0, 1, length.out = n)
+
+for(i in 2:n){
+  for(j in 1:(i - 1)){
+    if(significant_corrs[i, j] == TRUE){
+      points(locations[i], locations[j], pch = 8)
+    }
+  }
+}
+
+axis(1, at = seq(0, 1, length.out = n), labels = lags, las = 2)
+axis(2, at = seq(0, 1, length.out = n), labels = lags, las = 2)
+
+image.plot(Cmean_upper[(n + 1):(2*n), ], col = col_palette[ceiling(500*(1-abs(min(Cmean[(n + 1):(2*n), ])))):floor(500*(1+max(Cmean[(n + 1):(2*n), ])))], 
+           main = "", axes = FALSE, legend.shrink = 0.0001,
+           legend.mar = 3.5)
+
+cross_sig = significant_corrs[(n + 1):(2*n), ]
+
+for(i in 1:n){
+  for(j in 1:n){
+    if(cross_sig[i, j] == TRUE){
+      points(locations[i], locations[j], pch = 8)
+    }
+  }
+}
+
+#axis(1, at = seq(0, 1, length.out = 10), labels = lags, las = 2)
+axis(2, at = seq(0, 1, length.out = n), labels = leads, las = 1)
+
+dev.off()
+
+png("_images/param_inference_macro_CDFs.png", 
+    width = 2, height = 6, units = "in", res = 650)
+
+par(mfcol = c(4, 1), mar = c(2, 2, 2, 2))
+
+a = seq(0.1, 0.9, length.out = 9)
+band_col = rgb(1, 0, 0, 0.15)
+
+my_labs <- c("Real GDP", "PCE", "BFI", "Residential invesment",
+             "Industrial production", "Capacity utilization", "Payroll employment",
+             "Hours", "Unemployment rate", "GDP PI inflation", "PCE inflation",
+             "Federal funds rate", "Yield spread", "Real S&P 500")
+
+for(i in c(9,10,12,13)){
+  plot(ecdf(Y[, i]), do.points = FALSE, col = "white", main = my_labs[i],
+       yaxs = "i", xlab = "", ylab = "", bty = "n", yaxt = "n")
+  plot_ma_band_discrete(draws$ma[[i]][, 1, 1], draws$ma[[i]][, 2, ], a, band_col)
+  lines(ecdf(Y[, i]), col = "black", do.points = FALSE)
+  abline(h = c(0, 1))
+  axis(2, at = c(0, 1), las = 1, cex.axis = 1.1, col = "white")
+  if(i == 4){
+    legend("bottomright", c("ECDF", "MA"), lty = 1, col = c("black", "red"), bty = "n")
+  }
+}
+
+dev.off()
+

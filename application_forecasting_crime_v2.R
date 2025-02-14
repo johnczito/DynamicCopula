@@ -63,6 +63,31 @@ dev.off()
 # JZ: need to have the variable name bestride both plots
 
 # ==============================================================================
+# small subset for in-text
+# ==============================================================================
+
+png(paste("_images/crime_subset_intext.png", sep = ""), 
+    width = 6.5, height = 8 * (2 / 7), units = "in", res = 650)
+
+par(mfrow = c(2, 4))
+
+for(i in c(4, 7, 8, 9)){
+  y = Y[, i]
+  minY = min(y)
+  maxY = max(y)
+  
+  par(mar = c(2, 2, 2, 0.5))
+  plot(dates, y, type = "l", main = my_labs[i])
+  mtext(var_names[i], outer = TRUE, line = 1)
+  
+  par(mar = c(2, 0.5, 2, 1))
+  probs = table(factor(y, levels = minY:maxY)) / T
+  barplot(probs, names.arg = minY:maxY, col = "blue", border = NA, yaxt = "n")
+}
+
+dev.off()
+
+# ==============================================================================
 # sampling settings
 # ==============================================================================
 

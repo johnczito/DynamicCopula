@@ -165,7 +165,7 @@ for(i in 1:n){
 }
 
 # ==============================================================================
-# plot it!
+# Full plot for appendix
 # ==============================================================================
 
 my_labels <- c("Real GDP", "PCE", "BFI", "Residential invesment",
@@ -173,14 +173,14 @@ my_labels <- c("Real GDP", "PCE", "BFI", "Residential invesment",
                "Hours", "Unemployment rate", "GDP PI inflation", "PCE inflation",
                "Federal funds rate", "Yield spread", "Real S&P 500")
 
+write_image <- TRUE
+histogram <- FALSE
+add_normal <- FALSE
+
 if(write_image){
   png(paste("_images/ccm_2016_JBES_14var_1965Q1_2019Q4.png", sep = ""), 
       width = 6.5, height = 8, units = "in", res = 650)
 }
-
-write_image <- TRUE
-histogram <- FALSE
-add_normal <- FALSE
 
 par(mfrow = c(n / 2, 4))
 
@@ -213,6 +213,50 @@ if(write_image){
 
 
 
+# ==============================================================================
+# Smaller plot for in-text
+# ==============================================================================
 
+my_labels <- c("Real GDP", "PCE", "BFI", "Residential invesment",
+               "Industrial production", "Capacity utilization", "Payroll employment",
+               "Hours", "Unemployment rate", "GDP PI inflation", "PCE inflation",
+               "Federal funds rate", "Yield spread", "Real S&P 500")
 
+which_vars <- c(9, 10, 12, 13)
+
+write_image <- TRUE
+histogram <- FALSE
+add_normal <- FALSE
+
+if(write_image){
+  png(paste("_images/macro_subset_intext.png", sep = ""), 
+      width = 6.5, height = 8 * (2 / 7), units = "in", res = 650)
+}
+
+par(mfrow = c(length(which_vars) / 2, 4))
+
+for(j in which_vars){
+  y = Y[, j]
+  
+  par(mar = c(2, 2, 2, 0.25))
+  plot(dates, y, type = "l", main = my_labels[j])
+  
+  par(mar = c(2, 0.25, 2, 0.25))
+  if(histogram == TRUE){
+    hist(y, breaks = 25, freq = FALSE, col = "blue", border = "white", main = "", yaxt = "n")
+  }else{
+    x_grid <- seq(min(y)-5, max(y)+5, length.out = 750)
+    y_vals <- dnorm(x_grid, mean = mean(y), sd = sd(y))
+    f = density(y)
+    
+    plot(f, yaxt = "n", bty = "n", main = "", col = "blue", ylim = c(0, max(max(f$y), max(y_vals))))
+    if(add_normal == TRUE){
+      lines(x_grid, y_vals, col = "red")
+    }
+  }
+}
+
+if(write_image){
+  dev.off()
+}
 
