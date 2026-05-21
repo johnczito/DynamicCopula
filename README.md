@@ -14,5 +14,5 @@ DGFC.forecast(H, draws, use_spline)
 
 `DGFC.mcmc` runs the Gibbs sampler (Algorithm 3) for approximating the pseudo-posterior
 in the DGFC, and given the posterior draws, `DGFC.forecast` simulates the model forward
-to forecast `H` steps into the future.
+to forecast `H` steps into the future (Algorithm 2).
 
