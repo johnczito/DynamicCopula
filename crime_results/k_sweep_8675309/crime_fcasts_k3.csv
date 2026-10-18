@@ -1,0 +1,11 @@
+"","MAE","INT-COV","INT-SIZE","CRPS"
+"Murder",2.15,0.96,11.35,1.53
+"Attempted",1.9,0.97,10.5,1.34
+"Accessory",0.4,0.99,2.68,0.3
+"Manslaughter",0.77,0.99,3.43,0.49
+"Non-domestic assault",216.67,0.94,968.01,151.6
+"Officer assault",24.42,0.93,115.31,17.46
+"Abduction",5.37,0.97,29.76,3.81
+"Blackmail",11.61,0.94,30,9.51
+"Escape custody",4.79,0.94,21.43,3.31
+"Resist officer",58.88,0.93,294.59,42.11

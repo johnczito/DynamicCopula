@@ -13,6 +13,9 @@
 # The second step changes the numbers relative to a sequential run, so each origin 
 # now draws from its own RNG stream rather than one shared sequential stream. 
 # A full run takes around ~10 minutes on 13 workers.
+#
+# Added backups of individual stages in case of fatal run errors (/_ckpt)
+# I recommend removing it every run, as it takes up a lot of storage
 # ==============================================================================
 
 # ==============================================================================
@@ -31,7 +34,7 @@ plan(multisession, workers = max(1, availableCores() - 1))
 # plan(multisession, workers = 2)
 
 
-# set.seed(42065)
+#set.seed(42065)
 set.seed(8675309)
 
 # ==============================================================================
@@ -116,12 +119,14 @@ dev.off()
 pois_ndraw = 1000
 nbinom_ndraw = 1000
 
-bvar_ndraw = 1000
-bvar_nburn = 1000
+bvar_ndraw = 5000
+bvar_nburn = 5000
 bvar_nthin = 1
 
-dfc_ndraw  = 1000
-dfc_nburn = 0
+#dfc_ndraw  = 1000
+#dfc_nburn = 0
+dfc_ndraw  = 5000
+dfc_nburn = 5000
 dfc_nthin = 1
 
 # ==============================================================================
@@ -131,14 +136,15 @@ dfc_nthin = 1
 H = 5
 Tstart = 12 * 5
 Tstop = T
-# Tstop = Tstart + H + 4   # ten-origin validation run
+#Tstop = Tstart + H + 4   # ten-origin validation run
 
 # ==============================================================================
 # model settings
 # ==============================================================================
 
 bvar_lag = 1
-factor_dim = 3
+#factor_dim = 3
+factor_dim = ceiling(0.7 * n)
 
 col_bvar = "orange"
 col_dfc = "blue"
@@ -204,8 +210,13 @@ settings <- list(
 
 run_origin <- function(t, Y, s) {
   
-  # One-time setup per worker. multisession workers persist across the call,
-  # so this fires once each, not once per origin.
+  ckpt <- file.path(s$repo, "_ckpt", sprintf("origin_%04d.rds", t))
+  if (file.exists(ckpt)) {
+    message("Stage ", t, " of ", s$Tstop, " loaded from checkpoint")
+    return(readRDS(ckpt))
+  }
+  
+  # One-time setup per worker.
   if (!exists("DGFC.mcmc", mode = "function")) {
     source(file.path(s$repo, "_packages.R"))
     source(file.path(s$repo, "_helpers", "_helpers.R"))
@@ -215,47 +226,58 @@ run_origin <- function(t, Y, s) {
   }
   
   t0 <- Sys.time()
-  Yt <- Y[1:t, ]
-  out <- list()
   
-  # Poisson DGLM
-  if (s$run_POISSON) {
-    out$pois <- get_poisson_mvforecasts(Yt, s$H, s$pois_ndraw)
-  } else {
-    out$pois <- array(0, c(s$H, s$n, s$pois_ndraw))
-  }
+  out <- tryCatch({
+    
+    Yt <- Y[1:t, ]
+    o <- list()
+    
+    if (s$run_POISSON) {
+      o$pois <- get_poisson_mvforecasts(Yt, s$H, s$pois_ndraw)
+    } else {
+      o$pois <- array(0, c(s$H, s$n, s$pois_ndraw))
+    }
+    
+    if (s$run_NBINOM) {
+      o$nbinom <- get_nbinom_mvforecasts(Yt, s$H, s$nbinom_ndraw)
+    } else {
+      o$nbinom <- array(0, c(s$H, s$n, s$nbinom_ndraw))
+    }
+    
+    if (s$run_BVAR) {
+      my_bvar_model <- bvar(Yt, lags = s$bvar_lag, verbose = FALSE,
+                            n_draw = s$bvar_ndraw * s$bvar_nthin + s$bvar_nburn,
+                            n_burn = s$bvar_nburn,
+                            n_thin = s$bvar_nthin)
+      o$bvar <- aperm(predict(my_bvar_model, horizon = s$H)$fcast, c(2, 3, 1))
+    } else {
+      o$bvar <- array(0, c(s$H, s$n, s$bvar_ndraw))
+    }
+    
+    if (s$run_DGFC) {
+      draws <- DGFC.mcmc(Yt, k.star = s$factor_dim,
+                         ndraw = s$dfc_ndraw, burn = s$dfc_nburn,
+                         thin = s$dfc_nthin)
+      o$dfc <- DGFC.forecast(s$H, draws)
+      o$maxeig <- max(sapply(1:dim(draws$G)[3], function(m)
+        max(Mod(eigen(draws$G[, , m], only.values = TRUE)$values))))
+    } else {
+      o$dfc <- array(0, c(s$H, s$n, s$dfc_ndraw))
+      o$maxeig <- NA
+    }
+    
+    o
+    
+  }, error = function(e) {
+    list(error = conditionMessage(e), t = t)
+  })
   
-  # Negative binomial DGLM
-  if (s$run_NBINOM) {
-    out$nbinom <- get_nbinom_mvforecasts(Yt, s$H, s$nbinom_ndraw)
-  } else {
-    out$nbinom <- array(0, c(s$H, s$n, s$nbinom_ndraw))
-  }
-  
-  # BVAR
-  if (s$run_BVAR) {
-    my_bvar_model <- bvar(Yt, lags = s$bvar_lag, verbose = FALSE,
-                          n_draw = s$bvar_ndraw * s$bvar_nthin + s$bvar_nburn,
-                          n_burn = s$bvar_nburn,
-                          n_thin = s$bvar_nthin)
-    out$bvar <- aperm(predict(my_bvar_model, horizon = s$H)$fcast, c(2, 3, 1))
-  } else {
-    out$bvar <- array(0, c(s$H, s$n, s$bvar_ndraw))
-  }
-  
-  # DGFC
-  if (s$run_DGFC) {
-    draws <- DGFC.mcmc(Yt, k.star = s$factor_dim,
-                       ndraw = s$dfc_ndraw, burn = s$dfc_nburn, thin = s$dfc_nthin)
-    out$dfc <- DGFC.forecast(s$H, draws)
-  } else {
-    out$dfc <- array(0, c(s$H, s$n, s$dfc_ndraw))
-  }
-  
-  message(paste("Stage ", t, " of ", s$Tstop, " done in ",
+  message(paste("Stage ", t, " of ", s$Tstop,
+                if (is.null(out$error)) " done in " else " FAILED after ",
                 round(difftime(Sys.time(), t0, units = "mins"), 2),
                 " min", sep = ""))
   
+  saveRDS(out, ckpt)
   out
 }
 
@@ -264,6 +286,8 @@ run_origin <- function(t, Y, s) {
 # ==============================================================================
 
 origins <- Tstart:Tstop
+
+dir.create("_ckpt", showWarnings = FALSE)
 
 run_start <- Sys.time()
 
@@ -289,6 +313,19 @@ message(paste("Loop total:",
 # results[[i]] corresponds to origins[i], NOT to time index i.
 # ==============================================================================
 
+failed <- which(vapply(results, function(r) !is.null(r$error), logical(1)))
+if (length(failed)) {
+  message("FAILED origins: ", paste(origins[failed], collapse = ", "))
+  message("First error: ", results[[failed[1]]]$error)
+} else {
+  message("All origins completed.")
+}
+
+maxeig <- vapply(results, function(r)
+  if (is.null(r$maxeig)) NA_real_ else r$maxeig, numeric(1))
+message("Largest spectral radius of G across origins: ",
+        round(max(maxeig, na.rm = TRUE), 5))
+
 for (i in seq_along(origins)) {
   tt <- origins[i]
   fcast_pois[, , , tt]   <- results[[i]]$pois
@@ -306,7 +343,8 @@ gc()
 
 alpha = 0.05
 
-save.image("par_stage2_after_loop.Rdata")
+#save.image("par_stage2_after_loop.Rdata")
+save.image("stage4_after_loop.RData")
 
 period = (Tstart + H):Tstop
 h = 1
@@ -344,7 +382,8 @@ for(i in 1:n){
 
 mastertable <- cbind(mastertable[1:(nmod * n / 2), ], mastertable[((nmod * n / 2) + 1):(nmod*n), ])
 
-write.csv(mastertable, "crime_fcasts_par_stage2.csv", row.names = FALSE)
+#write.csv(mastertable, "crime_fcasts_par_stage2.csv", row.names = FALSE)
+write.csv(mastertable, "crime_fcasts_stage4.csv", row.names = FALSE)
 
 message(paste("Total:", round(difftime(Sys.time(), run_start, units = "mins"), 2), "min"))
 

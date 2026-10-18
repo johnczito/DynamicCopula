@@ -1,16 +1,16 @@
 isexplosive <- function(A){
-# VAR(1): y[t] = A * y[t - 1] + e[t]
-# Does A have any eigenvalues outside the unit circle?
-#
-# A: n x n matrix
+  # VAR(1): y[t] = A * y[t - 1] + e[t]
+  # Does A have any eigenvalues outside the unit circle?
+  #
+  # A: n x n matrix
   
   return(all(abs(eigen(A)$values) < 1) == FALSE)
 }
 
 companion <- function(VARparams){
-# Calculate the companion form matrix.
-#
-# VARparams: n x n*p matrix
+  # Calculate the companion form matrix.
+  #
+  # VARparams: n x n*p matrix
   
   n = nrow(VARparams)
   p = ncol(VARparams) / n
@@ -18,11 +18,11 @@ companion <- function(VARparams){
 }
 
 varp2var1 <- function(VARparams, S){
-# Calculate the parameters of the VAR(1) representation of an n-dimensional VAR(p)
-# Source: Lutkepohl (2005) pg. 15
-#
-# AR: n x n*p matrix
-#  S: n x n covariance matrix
+  # Calculate the parameters of the VAR(1) representation of an n-dimensional VAR(p)
+  # Source: Lutkepohl (2005) pg. 15
+  #
+  # AR: n x n*p matrix
+  #  S: n x n covariance matrix
   n = nrow(VARparams)
   np = ncol(VARparams)
   A = companion(VARparams)
@@ -32,16 +32,21 @@ varp2var1 <- function(VARparams, S){
 }
 
 stationary_var1_covariance <- function(A, SU){
-# Calculate marginal covariance of Y[t] in stationary VAR(1): 
-# Y[t] = A * Y[t - 1] + E[t], E[t] ~ N(0, SU)
-# Source: Lutkepohl (2005) Section 2.1.4 (pg. 29)
-# Note: matrix inverse should fail if A has eigenvalues outside the unit circle
-#
-#  A: n x n matrix
-# SU: n x n covariance matrix
+  # Calculate marginal covariance of Y[t] in stationary VAR(1): 
+  # Y[t] = A * Y[t - 1] + E[t], E[t] ~ N(0, SU)
+  # Source: Lutkepohl (2005) Section 2.1.4 (pg. 29)
+  # Note: matrix inverse should fail if A has eigenvalues outside the unit circle
+  #
+  #  A: n x n matrix
+  # SU: n x n covariance matrix
   
   n = nrow(A)
-  return(matrix(solve(diag(n^2) - A %x% A, c(SU)), n, n))
+  # [CHANGED]
+  #return(matrix(solve(diag(n^2) - A %x% A, c(SU)), n, n))
+  G0 = matrix(solve(diag(n^2) - A %x% A, c(SU)), n, n)
+  # symmetric by construction; the Kronecker solve loses this to rounding,
+  # which breaks KFAS's LDL decomposition when it is passed as P1
+  return((G0 + t(G0)) / 2)
 }
 
 normalize_var1_params <- function(A, SU){
@@ -74,13 +79,13 @@ full_var1_covariance <- function(T, A, SU){
 }
 
 simulate_nonexplosive_var_params <- function(n, p, g0, O0){
-# Think of VAR(p) parameters concatenated into a matrix G = [G1 G2 ... Gp].
-# Simulate vec(G) ~ N(g0, O0) truncated to have eigenvalues in the unit circle.
-# 
-#  n: integer
-#  p: integer
-# g0: n*n*p-length vector
-# O0: n*n*p x n*n*p matrix
+  # Think of VAR(p) parameters concatenated into a matrix G = [G1 G2 ... Gp].
+  # Simulate vec(G) ~ N(g0, O0) truncated to have eigenvalues in the unit circle.
+  # 
+  #  n: integer
+  #  p: integer
+  # g0: n*n*p-length vector
+  # O0: n*n*p x n*n*p matrix
   
   if(n*n*p != length(g0)){
     stop('n*n*p is not equal to length of g0')
@@ -100,13 +105,13 @@ simulate_nonexplosive_var_params <- function(n, p, g0, O0){
 }
 
 var_stationary_params <- function(m, ARarray, S){
-# Compute the mean and covariance matrix of the stationary 
-# distribution of an n-variable VAR(p):
-# y[t] = m + AR[1] * y[t - 1] + ... + AR[p] * y[t - p] + e[t], e[t] ~ (0, S)
-#
-#       m: n-vector
-# ARarray: n x n x p array
-#       S: n x n matrix
+  # Compute the mean and covariance matrix of the stationary 
+  # distribution of an n-variable VAR(p):
+  # y[t] = m + AR[1] * y[t - 1] + ... + AR[p] * y[t - p] + e[t], e[t] ~ (0, S)
+  #
+  #       m: n-vector
+  # ARarray: n x n x p array
+  #       S: n x n matrix
   
   # dimensions
   n = length(m)
@@ -132,14 +137,14 @@ var_stationary_params <- function(m, ARarray, S){
 }
 
 simulate_stationary_var <- function(T, m, ARarray, S, Y0 = NULL){
-# Simulate forward a stationary VAR(p):
-# y[t] = m + AR[1] * y[t - 1] + ... + AR[p] * y[t - p] + e[t], e[t] ~ N(0, S)
-#
-#       T: integer
-#       m: n-vector
-# ARarray: n x n x p array
-#       S: n x n matrix
-#      Y0: p x n matrix
+  # Simulate forward a stationary VAR(p):
+  # y[t] = m + AR[1] * y[t - 1] + ... + AR[p] * y[t - p] + e[t], e[t] ~ N(0, S)
+  #
+  #       T: integer
+  #       m: n-vector
+  # ARarray: n x n x p array
+  #       S: n x n matrix
+  #      Y0: p x n matrix
   
   # dimensions
   n = length(m)
