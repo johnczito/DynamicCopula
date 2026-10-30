@@ -1,0 +1,558 @@
+---
+title: "DGFC revision: results summary"
+author: "Ethan Carlson"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+geometry: margin=1in
+fontsize: 11pt
+output:
+  pdf_document:
+    toc: true
+    number_sections: false
+    fig_caption: false
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.width = 6.5, fig.height = 4, fig.align = "center",
+                      out.width = "100%")
+
+# ------------------------------------------------------------------------------
+# Inputs. Set the working directory to wherever these live, or edit the paths.
+# ------------------------------------------------------------------------------
+
+F_MACRO  <- "macro_k14_metrics.rds"
+F_DEGEN  <- "degenerate_draw_test.rds"
+F_CRIME  <- "experiement_crime_stage_8675309/crime_fcasts_k10.csv"
+F_CRIMEA <- "experiement_crime_stage_8675309/crime_ablation_k10.csv"
+F_MACROA <- "experiement_macro_stage_8675309/macro_ablation_k14.csv"
+
+RUN_CRIME_SIG <- TRUE
+F_CRIMEWS     <- "experiement_crime_stage_8675309/crime_k10_after_loop.RData"
+
+has <- function(f) file.exists(f)
+
+m <- if (has(F_MACRO)) readRDS(F_MACRO) else NULL
+d <- if (has(F_DEGEN)) readRDS(F_DEGEN) else NULL
+
+COL <- c(DGFC = "#1b4f72", BVAR = "#c0392b",
+         DLM = "#7d8a2e", `SV-BVAR` = "#b7791f")
+
+# Newey-West t on a loss differential. Positive => the DGFC is WORSE.
+nw_t <- function(dd) {
+  dd <- dd[is.finite(dd)]
+  Tn <- length(dd)
+  if (Tn < 10 || sd(dd) == 0) return(NA_real_)
+  l <- floor(4 * (Tn / 100)^(2/9))
+  g <- acf(dd, lag.max = l, type = "covariance", plot = FALSE)$acf
+  v <- g[1] + 2 * sum((1 - seq_len(l) / (l + 1)) * g[-1])
+  mean(dd) / sqrt(max(v, .Machine$double.eps) / Tn)
+}
+```
+
+```{r file-check, results = "asis"}
+fl <- c(F_MACRO, F_DEGEN, F_CRIME, F_CRIMEA, F_MACROA, F_CRIMEWS)
+missing <- fl[!file.exists(fl)]
+if (length(missing)) {
+  cat("**Inputs not found in `", getwd(), "`:**\n\n", sep = "")
+  for (f in missing) cat("- `", f, "`\n", sep = "")
+  cat("\nSections depending on them are omitted.\n\n")
+}
+```
+
+# Headline
+
+```{r headline, results = "asis"}
+if (is.null(m)) {
+  cat("`", F_MACRO, "` not found.\n", sep = "")
+} else {
+  f  <- m$finals
+  nn <- length(m$var_names)
+
+  t_sv   <- sapply(1:nn, function(i) nw_t(m$dfc[, 4, i] - m$svbvar[, 4, i]))
+  t_bvar <- sapply(1:nn, function(i) nw_t(m$dfc[, 4, i] - m$var[, 4, i]))
+  t_dlm  <- sapply(1:nn, function(i) nw_t(m$dfc[, 4, i] - m$dlm[, 4, i]))
+
+  cat(sprintf(
+"The DGFC beats both competitors already in the paper, significantly, on every
+series where a difference is detectable. It is statistically indistinguishable
+from a modern stochastic-volatility BVAR on %d of %d macro series and
+significantly behind on %d.
+
+- vs the plain BVAR: DGFC significantly better on **%d of %d**
+- vs the DLM: DGFC significantly better on **%d of %d**, never worse
+- vs the SV BVAR: DGFC significantly worse on **%d of %d**, better on %d
+
+Interval forecasting goes the other way. The DGFC has narrower 95%% intervals
+than the SV BVAR on **%d of %d** series at mean coverage %.3f against the SV
+BVAR's %.3f, so it is both sharper and closer to the 0.95 nominal. MSE is a tie
+at %d to %d.
+
+Significance throughout is a Newey-West t on the per-vintage CRPS differential,
+significant at |t| > 1.96.
+",
+    sum(abs(t_sv) <= 1.96), nn, sum(t_sv > 1.96),
+    sum(t_bvar < -1.96), nn,
+    sum(t_dlm  < -1.96), nn,
+    sum(t_sv   >  1.96), nn, sum(t_sv < -1.96),
+    sum(f$dfc[, 3] < f$svbvar[, 3]), nn,
+    mean(f$dfc[, 2]), mean(f$svbvar[, 2]),
+    sum(f$dfc[, 1] < f$svbvar[, 1]), sum(f$svbvar[, 1] < f$dfc[, 1])))
+}
+```
+
+# Macro, Table 2 at saturated k
+
+```{r macro-write}
+if (!is.null(m)) {
+  f <- m$finals
+  models <- c("DGFC", "BVAR", "DLM", "SV-BVAR")
+  macro_lab <- do.call(rbind, lapply(seq_along(m$var_names), function(i)
+    data.frame(series = m$var_names[i], model = models,
+               MSE  = round(c(f$dfc[i,1], f$var[i,1], f$dlm[i,1], f$svbvar[i,1]), 3),
+               COV  = round(c(f$dfc[i,2], f$var[i,2], f$dlm[i,2], f$svbvar[i,2]), 3),
+               SIZE = round(c(f$dfc[i,3], f$var[i,3], f$dlm[i,3], f$svbvar[i,3]), 3),
+               CRPS = round(c(f$dfc[i,4], f$var[i,4], f$dlm[i,4], f$svbvar[i,4]), 3),
+               stringsAsFactors = FALSE)))
+  write.csv(macro_lab, "macro_table_k14_labeled.csv", row.names = FALSE)
+}
+```
+
+The full four-metric table is in `macro_table_k14_labeled.csv`. Split here into
+the two views that matter.
+
+```{r macro-crps}
+if (!is.null(m)) {
+  f <- m$finals
+  tb <- data.frame(series = m$var_names,
+                   DGFC = round(f$dfc[,4], 3), BVAR = round(f$var[,4], 3),
+                   DLM = round(f$dlm[,4], 3), `SV-BVAR` = round(f$svbvar[,4], 3),
+                   check.names = FALSE, stringsAsFactors = FALSE)
+  knitr::kable(tb, caption = "CRPS, lower is better.")
+}
+```
+
+```{r macro-cov}
+if (!is.null(m)) {
+  f <- m$finals
+  tb <- data.frame(series = m$var_names,
+                   `cov DGFC` = round(f$dfc[,2], 3), `cov SV` = round(f$svbvar[,2], 3),
+                   `cov BVAR` = round(f$var[,2], 3), `cov DLM` = round(f$dlm[,2], 3),
+                   `sz DGFC` = round(f$dfc[,3], 2),  `sz SV` = round(f$svbvar[,3], 2),
+                   `sz BVAR` = round(f$var[,3], 2),  `sz DLM` = round(f$dlm[,3], 2),
+                   check.names = FALSE, stringsAsFactors = FALSE)
+  knitr::kable(tb, caption = "Coverage against a 0.95 nominal, and 95% interval width.")
+}
+```
+
+## Sharpness against calibration
+
+Maximize sharpness subject to calibration, so the useful view is both at once.
+Width is normalized by the DGFC's width for that series, since the fourteen
+series differ in scale by three orders of magnitude.
+
+```{r gneiting-plot, fig.height = 4.6}
+if (!is.null(m)) {
+  f  <- m$finals
+  sz <- cbind(f$dfc[,3], f$var[,3], f$dlm[,3], f$svbvar[,3])
+  cv <- cbind(f$dfc[,2], f$var[,2], f$dlm[,2], f$svbvar[,2])
+  szn <- sz / sz[, 1]
+
+  par(mar = c(4.2, 4.2, 2.2, 7.5), xpd = NA)
+  plot(NA, xlim = range(szn) * c(0.8, 1.25), ylim = c(0.86, 1.01), log = "x",
+       xlab = "interval width, relative to DGFC (log scale)",
+       ylab = "empirical coverage", cex.lab = 0.9, cex.axis = 0.85,
+       main = "Sharper is left, calibrated is the dashed line", cex.main = 1)
+  par(xpd = FALSE)
+  abline(h = 0.95, lty = 2)
+  abline(v = 1, col = "grey85")
+  for (j in 1:4) points(szn[, j], cv[, j], pch = 19, col = COL[j], cex = 1)
+  legend(par("usr")[2] * 1.15, 1.0, names(COL), pch = 19, col = COL,
+         bty = "o", cex = 0.85, xjust = -1, yjust = 2.5)
+  par(xpd = FALSE)
+}
+```
+
+The plain BVAR sits at coverage 1.000 on every series with intervals several
+times wider, which is uninformative rather than good. The DLM over-covers at a
+smaller width penalty. The SV BVAR is close to the DGFC on width and slightly
+over-covers.
+
+# Significance
+
+\newpage
+
+```{r sig-table}
+if (!is.null(m)) {
+  nn <- length(m$var_names)
+  sig <- data.frame(
+    series = m$var_names,
+    pct_sv = round(100 * (m$finals$svbvar[,4] / m$finals$dfc[,4] - 1), 1),
+    t_sv   = round(sapply(1:nn, function(i) nw_t(m$dfc[,4,i] - m$svbvar[,4,i])), 2),
+    t_bvar = round(sapply(1:nn, function(i) nw_t(m$dfc[,4,i] - m$var[,4,i])), 2),
+    t_dlm  = round(sapply(1:nn, function(i) nw_t(m$dfc[,4,i] - m$dlm[,4,i])), 2),
+    stringsAsFactors = FALSE)
+  sig <- sig[order(sig$t_sv, decreasing = TRUE), ]
+  rownames(sig) <- NULL
+  knitr::kable(sig, caption = "Positive t means the DGFC is worse. Significant at 5% beyond 1.96; Bonferroni across 14 tests is 2.91.")
+}
+```
+
+```{r sig-plot, fig.height = 5}
+if (!is.null(m)) {
+  nn <- length(m$var_names)
+  tm <- cbind(
+    `vs BVAR`    = sapply(1:nn, function(i) nw_t(m$dfc[,4,i] - m$var[,4,i])),
+    `vs DLM`     = sapply(1:nn, function(i) nw_t(m$dfc[,4,i] - m$dlm[,4,i])),
+    `vs SV-BVAR` = sapply(1:nn, function(i) nw_t(m$dfc[,4,i] - m$svbvar[,4,i])))
+  rownames(tm) <- m$var_names
+  o <- order(tm[, 3])
+
+  par(mar = c(4.2, 7.5, 2.4, 1))
+  plot(NA, xlim = range(c(tm, -3, 5)), ylim = c(0.5, nn + 0.5), yaxt = "n",
+       xlab = "Newey-West t   (positive = DGFC worse)", ylab = "",
+       main = "All three comparisons", cex.main = 1, cex.lab = 0.9,
+       cex.axis = 0.85)
+  abline(h = 1:nn, col = "grey93")
+  abline(v = c(-1.96, 1.96), lty = 2)
+  abline(v = 0, col = "grey50")
+  axis(2, at = 1:nn, labels = rownames(tm)[o], las = 1, cex.axis = 0.75, tick = FALSE)
+  for (j in 1:3) points(tm[o, j], 1:nn, pch = 19, col = COL[j + 1], cex = 0.95)
+  legend("bottomleft", colnames(tm), pch = 19, col = COL[2:4], bty = "o",
+         cex = 0.8, horiz = FALSE, inset = c(0.06, 0.3))
+}
+```
+
+The two comparisons already in the paper produce t-statistics up to 36, so the
+test has ample power. The nulls against the SV BVAR are genuine, not a power
+failure.
+
+# Crime, Table 1 at saturated k
+
+```{r crime-table, results = "asis"}
+if (!has(F_CRIME)) {
+  cat("`", F_CRIME, "` not found.\n\n", sep = "")
+} else {
+  ct    <- as.matrix(read.csv(F_CRIME))
+  mods4 <- c("DGFC", "BVAR", "Pois-DGLM", "NB-DGLM")
+  labL  <- c("Murder", "Attempted", "Accessory", "Manslaughter", "Non-domestic assault")
+  labR  <- c("Officer assault", "Abduction", "Blackmail", "Escape custody", "Resist officer")
+
+  crime_lab <- do.call(rbind, lapply(1:5, function(b) {
+    rr <- (4 * b - 3):(4 * b)
+    rbind(data.frame(series = labL[b], model = mods4, MAE = ct[rr, 1],
+                     COV = ct[rr, 2], SIZE = ct[rr, 3], CRPS = ct[rr, 4],
+                     stringsAsFactors = FALSE),
+          data.frame(series = labR[b], model = mods4, MAE = ct[rr, 5],
+                     COV = ct[rr, 6], SIZE = ct[rr, 7], CRPS = ct[rr, 8],
+                     stringsAsFactors = FALSE))
+  }))
+  rownames(crime_lab) <- NULL
+  write.csv(crime_lab, "crime_fcasts_k10_labeled.csv", row.names = FALSE)
+
+  dgc <- crime_lab[crime_lab$model == "DGFC", ]
+  nbc <- crime_lab[crime_lab$model == "NB-DGLM", ]
+  srs <- dgc$series
+
+  wins <- sapply(srs, function(s) {
+    blk <- crime_lab[crime_lab$series == s, ]
+    c(MAE = blk$MAE[1] == min(blk$MAE), SIZE = blk$SIZE[1] == min(blk$SIZE),
+      CRPS = blk$CRPS[1] == min(blk$CRPS))
+  })
+
+  cat(sprintf("DGFC wins CRPS **%d of %d**, interval size **%d of %d**, and MAE **%d of %d**. Mean coverage %.3f against a 0.95 nominal. The NB-DGLM reaches %.3f but with intervals %.0f to %.0f times wider.\n\n",
+              sum(wins["CRPS", ]), ncol(wins), sum(wins["SIZE", ]), ncol(wins),
+              sum(wins["MAE", ]), ncol(wins), mean(dgc$COV), mean(nbc$COV),
+              min(nbc$SIZE / dgc$SIZE), max(nbc$SIZE / dgc$SIZE)))
+
+  wide <- data.frame(series = srs,
+                     DGFC = dgc$CRPS,
+                     BVAR = crime_lab$CRPS[crime_lab$model == "BVAR"],
+                     Pois = crime_lab$CRPS[crime_lab$model == "Pois-DGLM"],
+                     NB   = nbc$CRPS,
+                     `cov DGFC`  = dgc$COV,
+                     `size DGFC` = dgc$SIZE,
+                     check.names = FALSE, stringsAsFactors = FALSE)
+
+  # reorder to match the significance table below
+  ord <- c("Murder", "Attempted", "Accessory", "Manslaughter", "Non-domestic assault",
+           "Officer assault", "Abduction", "Blackmail", "Escape custody", "Resist officer")
+  wide <- wide[match(ord, wide$series), ]
+  rownames(wide) <- NULL
+
+  print(knitr::kable(wide, caption = "Crime CRPS by model, with the DGFC's coverage and interval width. Full four-metric table in crime_fcasts_k10_labeled.csv."))
+}
+```
+
+```{r crime-sig, results = "asis"}
+F_CRIMESIG  <- "crime_k10_crps_per_origin.rds"
+FORCE_CRIME <- FALSE   # TRUE to rebuild the cache even if it exists
+
+cc <- NULL
+
+if (!FORCE_CRIME && has(F_CRIMESIG)) {
+
+  cc <- readRDS(F_CRIMESIG)
+
+} else if (RUN_CRIME_SIG && has(F_CRIMEWS)) {
+
+  # get_forecast_metrics() calls interval_score(), which exists in
+  # scoringutils 1.2.2 and was removed in 2.x. Attached directly rather than
+  # sourcing _packages.R, which tries to unload namespaces and fails once
+  # bayesianVARs is loaded.
+  suppressPackageStartupMessages({
+    library(scoringutils); library(scoringRules); library(HDInterval)
+  })
+  if (!exists("interval_score"))
+    stop("interval_score() not available. scoringutils is ",
+         as.character(packageVersion("scoringutils")),
+         "; this needs 1.2.2.")
+
+  e <- new.env(); load(F_CRIMEWS, envir = e)
+  if (!exists("get_variable_fcasts")) source("_helpers/_helpers.R")
+
+  period <- (e$Tstart + e$H):e$Tstop    # defined after save.image, so rebuild
+  ncr    <- ncol(e$Y)
+  arrs   <- list(DGFC = e$fcast_dfc, BVAR = e$fcast_bvar,
+                 `Pois-DGLM` = e$fcast_pois, `NB-DGLM` = e$fcast_nbinom)
+
+  crps <- array(NA_real_, c(length(period), length(arrs), ncr),
+                dimnames = list(NULL, names(arrs), e$my_labs))
+
+  for (mn in names(arrs)) for (i in seq_len(ncr)) {
+    s <- get_variable_fcasts(i, arrs[[mn]])
+    crps[, mn, i] <- get_forecast_metrics(e$Y[period, i], s[period, , ],
+                                          e$alpha)[1, "CRPS", 1, ]
+  }
+
+  cc <- list(crps = crps, labs = e$my_labs, period = period,
+             source = F_CRIMEWS, built = Sys.time())
+  saveRDS(cc, F_CRIMESIG)
+  rm(e); gc()
+}
+
+if (!is.null(cc)) {
+
+  ncr <- length(cc$labs)
+  tt  <- function(a, b) sapply(seq_len(ncr),
+                               function(i) nw_t(cc$crps[, a, i] - cc$crps[, b, i]))
+
+  cs <- data.frame(series = cc$labs,
+                   t_BVAR = round(tt("DGFC", "BVAR"), 2),
+                   t_Pois = round(tt("DGFC", "Pois-DGLM"), 2),
+                   t_NB   = round(tt("DGFC", "NB-DGLM"), 2),
+                   stringsAsFactors = FALSE)
+
+  print(knitr::kable(cs, caption = "Crime, Newey-West t on per-origin CRPS over 284 origins. Negative means the DGFC is better."))
+
+  cat(sprintf("\n\nDGFC significantly better on %d of %d series against the BVAR, %d against the Poisson DGLM, and %d against the NB DGLM. Significantly worse on %d.\n\n",
+              sum(cs$t_BVAR < -1.96), ncr, sum(cs$t_Pois < -1.96),
+              sum(cs$t_NB < -1.96),
+              sum(cs$t_BVAR > 1.96) + sum(cs$t_Pois > 1.96) + sum(cs$t_NB > 1.96)))
+
+  cat(sprintf("_Per-origin CRPS cached in `%s`, built %s from `%s`._\n\n",
+              F_CRIMESIG, format(cc$built, "%d %b %H:%M"), cc$source))
+}
+
+if (is.null(cc) && RUN_CRIME_SIG) {
+  cat("Crime significance skipped: neither `", F_CRIMESIG, "` nor `",
+      F_CRIMEWS, "` found.\n", sep = "")
+}
+```
+
+# The ECDF ablation
+
+Freezing the margin at the empirical CDF removes the uncertainty in F while
+leaving everything else alone. This is the direct answer to what margin
+estimation buys.
+
+```{r ablation-text, results = "asis"}
+# Built from macro_k14_metrics.rds rather than the CSV, so it can't drift
+# out of sync with the rest of the document.
+ab_m <- if (!is.null(m)) {
+  f <- m$finals
+  data.frame(series   = m$var_names,
+             cov_ma   = f$dfc[, 2],  cov_ec = f$ecdf[, 2],
+             size_pct = 100 * (f$ecdf[, 3] / f$dfc[, 3] - 1),
+             crps_pct = 100 * (f$ecdf[, 4] / f$dfc[, 4] - 1),
+             stringsAsFactors = FALSE)
+} else NULL
+ab_c <- if (has(F_CRIMEA)) read.csv(F_CRIMEA, stringsAsFactors = FALSE) else NULL
+
+if (!is.null(ab_c)) {
+  cat(sprintf("**Crime.** Intervals narrow on %d of %d series and CRPS gets worse on %d, by up to %.0f%% on blackmail. Mean coverage falls %.3f to %.3f.\n\n",
+              sum(ab_c$size_pct < 0), nrow(ab_c), sum(ab_c$crps_pct > 0),
+              max(ab_c$crps_pct), mean(ab_c$cov_ma), mean(ab_c$cov_ec)))
+}
+if (!is.null(ab_m)) {
+  lev <- ab_m$series %in% c("capu", "ur", "ffr", "spread")
+  cat(sprintf("**Macro.** Intervals narrow on %d of %d and mean coverage falls %.3f to %.3f. CRPS improves on %d of the %d growth rates and breaks on capu, ur and ffr at %.0f%%, %.0f%% and %.0f%% worse.\n\n",
+              sum(ab_m$size_pct < 0), nrow(ab_m),
+              mean(ab_m$cov_ma), mean(ab_m$cov_ec),
+              sum(ab_m$crps_pct[!lev] < 0), sum(!lev),
+              ab_m$crps_pct[ab_m$series == "capu"],
+              ab_m$crps_pct[ab_m$series == "ur"],
+              ab_m$crps_pct[ab_m$series == "ffr"]))
+}
+```
+
+```{r ablation-plot, fig.height = 4.4}
+avail <- list(Crime = ab_c, Macro = ab_m)
+avail <- avail[!sapply(avail, is.null)]
+
+if (length(avail)) {
+  par(mfrow = c(1, length(avail)), mar = c(7.5, 4, 2.6, 0.8))
+  for (nm in names(avail)) {
+    a <- avail[[nm]]
+    barplot(rbind(a$cov_ma, a$cov_ec), beside = TRUE, las = 2,
+            names.arg = a$series, ylim = c(0.70, 1.0), xpd = FALSE,
+            border = NA, col = c(COL[1], "grey70"), cex.names = 0.55,
+            cex.axis = 0.8, ylab = "empirical coverage", cex.lab = 0.85,
+            main = paste(nm, "coverage"), cex.main = 1)
+    abline(h = 0.95, lty = 2)
+    if (nm == names(avail)[1])
+      legend("topleft", c("margin adjustment", "ECDF"), fill = c(COL[1], "grey70"),
+             border = NA, bty = "n", cex = 0.7, inset = c(0.4, -0.04))
+  }
+  par(mfrow = c(1, 1))
+}
+```
+
+Freezing the margin costs calibration on both exercises. On crime it costs
+accuracy as well.
+
+\newpage
+
+# Where the macro loss sits
+
+```{r era}
+if (!is.null(m) && !is.null(m$gap)) {
+  lev <- which(m$var_names %in% c("capu", "ur", "ffr", "spread"))
+  scl <- colMeans(m$dfc[, 4, ])
+  rel <- sweep(m$dfc[, 4, ] - m$svbvar[, 4, ], 2, scl, "/")
+
+  eras <- data.frame(
+    era = levels(m$era),
+    all = round(as.numeric(tapply(rowMeans(rel), m$era, mean)), 4),
+    levels_4 = round(as.numeric(tapply(rowMeans(rel[,  lev]), m$era, mean)), 4),
+    growth_10 = round(as.numeric(tapply(rowMeans(rel[, -lev]), m$era, mean)), 4),
+    vintages = as.numeric(table(m$era)), stringsAsFactors = FALSE)
+  knitr::kable(eras, caption = "Relative CRPS advantage of the SV BVAR. Positive means the SV BVAR is ahead.")
+}
+```
+
+```{r era-plot, fig.height = 3.8}
+if (!is.null(m) && !is.null(m$gap)) {
+  par(mfrow = c(1, 2), mar = c(4.2, 4.2, 2.4, 0.8))
+
+  plot(m$fdates, m$gap, type = "l", xlab = "forecast vintage",
+       ylab = "rel. CRPS advantage, SV BVAR", main = "Per vintage",
+       cex.main = 1, cex.lab = 0.85, cex.axis = 0.8)
+  abline(h = 0, lty = 2); abline(v = c(2000, 2007, 2010), col = "grey85", lty = 3)
+
+  mt <- rbind(as.numeric(tapply(rowMeans(rel[,  lev]), m$era, mean)),
+              as.numeric(tapply(rowMeans(rel[, -lev]), m$era, mean)))
+  barplot(mt, beside = TRUE, names.arg = levels(m$era), las = 2, border = NA,
+          col = c(COL[4], "grey70"), ylab = "rel. CRPS advantage",
+          main = "Levels vs growth", cex.main = 1, cex.names = 0.7,
+          cex.axis = 0.8, cex.lab = 0.85)
+  abline(h = 0)
+  legend("topleft", c("4 levels", "10 growth"), fill = c(COL[4], "grey70"),
+         border = NA, bty = "n", cex = 0.7)
+  par(mfrow = c(1, 1))
+}
+```
+
+The SV BVAR's advantage is **not** concentrated in the volatile period. It is
+smallest in 2007 to 2009, the only era where the DGFC leads on growth rates,
+and the largest single DGFC win in the sample is a 1991 vintage. The split is
+by series, not by period.
+
+# Mechanism
+
+```{r mechanism, results = "asis"}
+if (!is.null(d)) {
+  mm <- round(colMeans(d$mech), 4)
+  ee <- round(colMeans(d$eig), 4)
+
+  cat(sprintf(
+"The latent factor VAR sits at the stationarity boundary across the whole
+posterior. The mean spectral radius of G is **%.4f** even among the
+well-behaved draws, rising to **%.4f** in the worst 5%%, and the rejection
+sampler is the only thing keeping it stationary.
+
+The largest latent value is identical in both groups, %.4f against %.4f, so the
+latent series is not compressed. What differs is the implied scale: %.4f
+against %.4f, a ratio of %.2f. The stationary covariance of an AR(1) goes as
+1/(1 - rho^2), which predicts a ratio of **%.2f** from those two spectral
+radii.
+
+Correlation between boundary proximity and the compressed margin: %.3f.
+",
+    ee["eig_good"], ee["eig_bad"], mm["maxz_bad"], mm["maxz_good"],
+    mm["sdimp_bad"], mm["sdimp_good"], mm["sdimp_bad"] / mm["sdimp_good"],
+    sqrt((1 - ee["eig_good"]^2) / (1 - ee["eig_bad"]^2)), ee["cor"]))
+}
+```
+
+```{r mech-plot, fig.height = 3.8}
+if (!is.null(d)) {
+  par(mfrow = c(1, 2), mar = c(4.2, 4.2, 2.4, 0.8))
+  nvv <- nrow(d$eig)
+
+  plot(d$vsel[seq_len(nvv)], d$eig[, "eig_good"], type = "b", pch = 19,
+       ylim = c(min(d$eig[, c("eig_good", "eig_bad")]) - 0.004, 1.002),
+       col = COL[1], xlab = "vintage index", ylab = "spectral radius of G",
+       main = "Against the unit-root boundary", cex.main = 1, cex = 0.8,
+       cex.lab = 0.85, cex.axis = 0.8)
+  lines(d$vsel[seq_len(nvv)], d$eig[, "eig_bad"], type = "b", pch = 19,
+        col = COL[2], cex = 0.8)
+  abline(h = 1, lty = 2)
+  legend("bottomright", c("typical draws", "worst 5%"), pch = 19,
+         col = COL[1:2], bty = "n", cex = 0.7)
+
+  barplot(as.numeric(d$tab$difference), names.arg = d$tab$dropped, border = NA,
+          col = "grey70", xlab = "share of draws dropped",
+          ylab = "CRPS penalty vs random (%)", cex.lab = 0.85, cex.axis = 0.8,
+          cex.names = 0.8, main = "Dropping them makes it worse", cex.main = 1)
+  abline(h = 0)
+  par(mfrow = c(1, 1))
+}
+```
+
+The draws nearest the boundary are not errors. Removing them degrades CRPS
+monotonically against a random subsample of identical size, so they are
+carrying real uncertainty about persistence.
+
+```{r stable-note, results = "asis"}
+if (!is.null(m) && !is.null(m$svbvar_nstable)) {
+  cat(sprintf("The SV BVAR says the same thing from the other side. `stable = TRUE` discards non-stationary draws and keeps a median of %d of 5000, with %d of %d vintages keeping fewer than half.\n\n",
+              round(median(m$svbvar_nstable)), sum(m$svbvar_nstable < 2500),
+              length(m$svbvar_nstable)))
+}
+```
+
+The macro data is not stationary, both models say so. The cost to the DGFC is
+two series out of fourteen.
+
+# Provenance
+
+| Output | Produced by |
+|:--------------------------------|:---------------------------------|
+| `crime_fcasts_k10.csv`, `crime_ablation_k10.csv` | crime pipeline, k = 10, 5000/5000 |
+| `macro_table_k14.csv`, `macro_ablation_k14.csv` | macro pipeline, k = 14, 5000/5000 |
+| `macro_k14_metrics.rds` | macro pipeline post-processing |
+| `degenerate_draw_test.rds` | `test_degenerate_draws.R`, 20 vintages |
+| MCMC settings (5000 after 5000) | `dgfc_ess_diagnostic.R` |
+| DGLM importance-weight degeneracy | `dglm_diagnostic.R` |
+| Parallel refactor is faithful | `check_stage1.R` |
+| ECDF flag is inert when off | `check_ecdf_flag.R` |
+
+Checked and ruled out: time-varying volatility as the explanation for the SV
+BVAR's edge; the spline's upper-tail extrapolation as a CRPS cost
+(`test_pad_mult.R`, median change 0.0%); degenerate margin draws as a CRPS cost
+(above).
+
+Still open: the latent factor VAR is hardcoded to one lag while every macro
+competitor uses four. Given that the binding constraint is persistence, that is
+the remaining candidate, and it is a modelling decision rather than an
+implementation one.

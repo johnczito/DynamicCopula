@@ -1,6 +1,6 @@
 # Parallelized forecasting pipelines
 
-Notes on the parallelization of the crime and macro forecasting exercises, the validation sequence used to check it, and the files involved.
+Notes on the forecasting pipelines: what was parallelized, how the changes were validated, which settings produced which results, and the traps.
 
 ------------------------------------------------------------------------
 
@@ -46,7 +46,7 @@ Four arguments to `future_lapply` are load-bearing:
 
 The order matters. Changing the loop structure and the random-number handling at the same time makes any difference unattributable, so they were changed and checked separately.
 
-**Stage 1. Refactor, still sequential.** The loop body became a function called with `lapply`. `lapply` consumes the random stream in the same order a `for` loop does, so this version must reproduce the original *bit for bit*. Checked with `identical()` on the forecast arrays over a short range. This step that establishes the restructuring didn't change the computation.
+**Stage 1. Refactor, still sequential.** The loop body became a function called with `lapply`. `lapply` consumes the random stream in the same order a `for` loop does, so this version must reproduce the original *bit for bit*. Checked with `identical()` on the forecast arrays over a short range. This is the step that establishes the restructuring didn't change the computation.
 
 **Stage 2. Swap in `future_lapply`.** Per-task seeding necessarily changes the draws, so correctness can no longer be checked by comparison with the sequential run. Instead:
 
@@ -59,6 +59,12 @@ The order matters. Changing the loop structure and the random-number handling at
 
 **Stage 5. Factor sweep.** With the loops fast enough to run several times, the factor dimension was swept across values with the competitors switched off, since they do not depend on `k`.
 
+### Validating later changes
+
+The staged discipline applies to anything that touches `DGFC.forecast` or the loop body, not just the original parallelization.
+
+**`check_ecdf_flag.R`** gates the ECDF ablation flag. It confirms that `use_ecdf = FALSE` is `identical()` to the old function with the spline both on and off, that the ECDF path runs under the spline, and that the argument guards fire. The seed has to be set before every `DGFC.forecast` call, since it draws randomness internally.
+
 ------------------------------------------------------------------------
 
 ## 4. Files
@@ -67,16 +73,30 @@ The order matters. Changing the loop structure and the random-number handling at
 
 **`_helpers/var.R`** — `stationary_var1_covariance` now symmetrizes its result before returning. The matrix is symmetric by construction, but the Kronecker solve loses that to floating-point rounding, and KFAS then fails its LDL decomposition when the result is passed as the initial state covariance `P1`. This surfaces at larger `k`, where the Kronecker system is bigger and worse conditioned. **Nothing runs above roughly `k = 5` without this fix.**
 
+**`_helpers/dgfc.R`** — `DGFC.forecast` gained three arguments, all defaulting to current behaviour:
+
+- `use_ecdf = FALSE` swaps the per-draw margin adjustment for the empirical CDF of `Y`, computed once outside the draw loop. This is the ablation.
+- `Y = NULL` supplies the data for that ECDF. It must be the training matrix the MCMC saw at that origin, not the full series.
+- `pad_mult = 1` scales the spline's upper-tail padding, which places the top knot at `max(xj) + pad_mult * sd(xj)`. `pad_mult = 0` forbids extrapolation past the largest observed value.
+
+The spline branch also pads only where `Fxj` does not already reach 0 or 1. The ECDF reaches exactly 1 at `max(xj)`, and padding there duplicates a knot and breaks `splinefun`.
+
 ### New scripts
 
 | File | Purpose |
-|------------------------------------|------------------------------------|
-| `application_forecasting_crime_parallel.R` | Parallel crime forecasting exercise. Produces Table 1. |
+|----|----|
+| `crime_parallel+ECDF.R` | Parallel crime forecasting exercise. Produces Table 1. |
 | `crime_v2_sweep.R` | Crime factor sweep. Takes `k` as a command-line argument, DGFC only. |
-| `application_forecasting_macro_parallel.R` | Parallel macro forecasting exercise. Produces Table 2. |
+| `macro_parallel+ECDF+SVBVAR.R` | Parallel macro forecasting exercise. Produces Table 2. |
 | `macro_v2_sweep.R` | Macro factor sweep. Takes `k` as a command-line argument, DGFC only. |
 | `dgfc_ess_diagnostic.R` | Mixing diagnostic. One long fit, effective sample sizes and trace plots for the identified quantities. |
 | `dglm_diagnostic.R` | Importance-weight diagnostic for the Poisson and negative binomial competitors. |
+| `check_stage1.R` | Stage 1 validation. Bit-for-bit comparison of the lapply refactor against the original loop. |
+| `check_ecdf_flag.R` | Validates the ECDF flag is inert when off and runs when on. |
+| `test_degenerate_draws.R` | Whether near-boundary margin draws cost CRPS, against a matched random subsample. Produced the spectral radius finding. |
+| `test_pad_mult.R` | Whether the spline's upper-tail extrapolation costs CRPS. Negative; `pad_mult = 1` stays the default. |
+| `test_svbvar_timing.R` | One-off feasibility check for `bayesianVARs`. Not re-run. |
+| `results_summary.Rmd` | Consolidated report. Knits to PDF. Reads the metrics `.rds` files, writes the labeled CSVs. |
 
 Sweep scripts are run once per value:
 
@@ -87,14 +107,14 @@ for k in 3 7 10 14; do Rscript macro_v2_sweep.R  $k; done
 
 ### Environment
 
-`scoringutils` must be pinned to **1.2.2**. Version 2.x removed `interval_score`, which `_helpers/forecasting.R` calls, so a fresh install breaks the scoring stage.
+**`scoringutils` must be pinned to 1.2.2.** Version 2.x removed `interval_score`, which `_helpers/forecasting.R` calls. This has broken the scoring stage twice. There is no lockfile, so a fresh clone or an incautious `update.packages()` will hit it again.
 
 ``` r
 remotes::install_version("scoringutils", version = "1.2.2",
                          repos = "https://cloud.r-project.org")
 ```
 
-`future`, `future.apply` and `RhpcBLASctl` are new dependencies.
+New dependencies since the original: `future`, `future.apply`, `RhpcBLASctl`, `bayesianVARs` (the SV BVAR competitor), `coda` (the mixing and degenerate-draw diagnostics). `results_summary.Rmd` additionally needs `rmarkdown` and a LaTeX installation.
 
 ------------------------------------------------------------------------
 
@@ -105,32 +125,45 @@ Which settings produced which file.
 ### Crime
 
 | File | Script | k | DGFC draw/burn | BVAR draw/burn | Seed | Runtime |
-|-------------|----------------|------|----------|----------|---------|-----------|
+|----|----|----|----|----|----|----|
 | `crime_fcasts_og_repro.csv` | `crime_v2` (original) | 3 | 1000/0 | 1000/1000 | 8675309 | \~90 min seq |
-| `crime_fcasts_par_stage2_*.csv` | `application_forecasting_crime_parallel` | 3 | 1000/0 | 1000/1000 | 8675309, 42065 | 10 min each |
-| `crime_fcasts_stage4_*.csv` | `application_forecasting_crime_parallel` | 7 | 5000/5000 | 5000/5000 | 8675309, 42065 | 68 min each |
+| `crime_fcasts_par_stage2_*.csv` | `crime_parallel+ECDF.R` | 3 | 1000/0 | 1000/1000 | 8675309, 42065 | 10 min each |
+| `crime_fcasts_stage4_*.csv` | `crime_parallel+ECDF.R` | 7 | 5000/5000 | 5000/5000 | 8675309, 42065 | 68 min each |
 | `crime_fcasts_k{3,5,7,10}.csv` | `crime_v2_sweep` | 3/5/7/10 | 5000/5000 | off | 8675309 | 59, 60, 63, 68 min |
+| `crime_fcasts_k10.csv`, `crime_ablation_k10.csv` | `crime_parallel+ECDF.R` | 10 | 5000/5000 | 5000/5000 | 8675309 | 70 min |
 
 ### Macro
 
 | File | Script | k | DGFC draw/burn | BVAR draw/burn | Seed | Runtime |
-|--------------|-------------|---------|----------|----------|---------|----------|
+|----|----|----|----|----|----|----|
 | `macro_og_repo.csv` | `macro_v1` (original) | 3 | 2000/0 | 1000/1000 | 8675309 | \~2.9 hr seq |
-| `macro_table_full_V2_short_*.csv` | `application_forecasting_macro_parallel.R` | 3 | 2000/0 | 1000/1000 | 8675309, 42065 | 13.5 min each |
-| `macro_table_stage4.csv` | `application_forecasting_macro_parallel.R` | 10 | 5000/5000 | 5000/5000 | 8675309 | 74 min |
+| `macro_table_full_V2_short_*.csv` | `macro_parallel+ECDF+SVBVAR.R` | 3 | 2000/0 | 1000/1000 | 8675309, 42065 | 13.5 min each |
+| `macro_table_stage4.csv` | `macro_parallel+ECDF+SVBVAR.R` | 10 | 5000/5000 | 5000/5000 | 8675309 | 74 min |
 | `macro_fcasts_k{3,7,10,14}.csv` | `macro_v2_sweep` | 3/7/10/14 | 5000/5000 | off | 8675309 | 57, 59, 61, 70 min |
+| `macro_table_k14.csv`, `macro_ablation_k14.csv` | `macro_parallel+ECDF+SVBVAR.R` | 14 | 5000/5000 | 5000/5000 | 8675309 | 70 min |
 
 The DLM and the two DGLM competitors are not MCMC: the DLM fits its variance parameters by maximum likelihood and draws from a single normal, and the DGLMs fit by maximum likelihood and draw by importance sampling. Their draw counts stayed at the original values throughout (2000 for the DLM, 1000 for each DGLM).
 
 All runs on a 14-core Apple Silicon machine, 13 workers.
 
+### Derived files
+
+| File | Produced by |
+|----|----|
+| `macro_k14_metrics.rds` | macro pipeline post-processing. Per-vintage metrics for all five arms. |
+| `crime_k10_crps_per_origin.rds` | `results_summary.Rmd`, cached from the crime workspace. |
+| `degenerate_draw_test.rds` | `test_degenerate_draws.R` |
+| `*_labeled.csv` | `results_summary.Rmd`. Row-labeled versions of the paper tables. |
+
+The paper-format CSVs have no row or column labels because they paste straight into the manuscript. Use the labeled versions to read them.
+
 ------------------------------------------------------------------------
 
 ## 6. Notes and gotchas
 
-- Checkpoint directories (`_ckpt*/`), workspace images (`*.RData`) and logs are gitignored. Workspace images run to several hundred MB.
-- `save.image` is called after the loop and before scoring in every script. A failure in the scoring stage would otherwise discard the whole run.
-- The crime scoring window starts at `Tstart + H`, so shortening the loop below that for a test run makes `period` count backwards and silently scores the wrong rows. Macro has no equivalent trap: shortening `Fend` is consistent throughout.
-- Per-split timings are printed from inside the workers, so they sum to far more than the wall clock and `message` output arrives in batches rather than streaming.
+- **Checkpoint directories must carry the configuration.** `_ckpt_macro_k14/` held results from an earlier k = 10 run, and every vintage loaded from checkpoint before the assembly loop failed. Name them `_ckpt_<exercise>_k<k>` and delete the old one when a configuration is finished with.
+- **`save.image` runs before post-processing**, so the workspace holds the raw forecast draws but none of the metrics arrays. Rebuilding them costs a couple of minutes and refits nothing, but the pipelines should save a small metrics `.rds` at the end instead.
+- **`_packages.R` tries to unload namespaces** and fails with "namespace 'MASS' cannot be unloaded" once `bayesianVARs` is loaded. Run the pipelines from a clean session or via `Rscript`, and attach packages directly in analysis scripts rather than sourcing it.
+- **`period` is defined after `save.image` in the crime script**, so anything reading that workspace has to rebuild it as `(Tstart + H):Tstop`.
 
 Ethan Carlson

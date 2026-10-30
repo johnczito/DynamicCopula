@@ -1,0 +1,41 @@
+"series","model","MAE","COV","SIZE","CRPS"
+"Murder","DGFC",2.15,0.96,11.13,1.53
+"Murder","BVAR",2.48,1,442.03,18.33
+"Murder","Pois-DGLM",13.15,0.83,73.98,11.37
+"Murder","NB-DGLM",17.45,0.89,192.35,13.89
+"Officer assault","DGFC",21.8,0.94,104.97,15.56
+"Officer assault","BVAR",53.66,1,14736.81,848.53
+"Officer assault","Pois-DGLM",342.35,0.7,1214.1,280.45
+"Officer assault","NB-DGLM",417.64,0.9,4878.86,343.13
+"Attempted","DGFC",1.89,0.98,9.64,1.31
+"Attempted","BVAR",3.2,1,777.54,38.84
+"Attempted","Pois-DGLM",4.05,0.87,20.4,3.12
+"Attempted","NB-DGLM",5.26,0.95,52.73,4.13
+"Abduction","DGFC",5.15,0.95,27.74,3.67
+"Abduction","BVAR",8.64,1,1954.03,102.64
+"Abduction","Pois-DGLM",24.3,0.79,79.53,17.67
+"Abduction","NB-DGLM",25.26,0.97,272.31,19.82
+"Accessory","DGFC",0.4,0.99,2.61,0.3
+"Accessory","BVAR",0.64,1,96.91,3.56
+"Accessory","Pois-DGLM",0.86,0.96,5.12,0.66
+"Accessory","NB-DGLM",0.84,0.98,8.43,0.67
+"Blackmail","DGFC",9.08,0.96,32.48,6.58
+"Blackmail","BVAR",4.77,1,393.39,16.81
+"Blackmail","Pois-DGLM",69.85,0.79,92.32,61.12
+"Blackmail","NB-DGLM",25.61,0.92,256.44,20.06
+"Manslaughter","DGFC",0.72,0.99,3.55,0.49
+"Manslaughter","BVAR",0.88,1,126.5,4.66
+"Manslaughter","Pois-DGLM",1.52,0.92,5.44,1.13
+"Manslaughter","NB-DGLM",1.51,0.95,12.62,1.18
+"Escape custody","DGFC",4.55,0.94,20.8,3.21
+"Escape custody","BVAR",5.84,1,1203.15,57.19
+"Escape custody","Pois-DGLM",29.42,0.79,113.54,22.87
+"Escape custody","NB-DGLM",24.17,0.92,395.7,20.31
+"Non-domestic assault","DGFC",158.08,0.93,769.97,114.23
+"Non-domestic assault","BVAR",812.27,1,233469.51,13698.82
+"Non-domestic assault","Pois-DGLM",2756.85,0.71,7657.87,2071.04
+"Non-domestic assault","NB-DGLM",3017.83,0.95,31651.38,2392.5
+"Resist officer","DGFC",51.15,0.94,254.24,36.53
+"Resist officer","BVAR",139.85,1,36944.51,2136.75
+"Resist officer","Pois-DGLM",620.4,0.67,1572.83,491.6
+"Resist officer","NB-DGLM",544.88,0.95,5653.35,432.57

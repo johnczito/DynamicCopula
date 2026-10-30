@@ -253,7 +253,11 @@ DGFC.mcmc <- function(Y, k.star = ceiling(.7 * ncol(Y)), prior = NULL, init = NU
   
 }
 
-DGFC.forecast <- function(H, draws, use_spline = FALSE){
+#[CHANGED]
+#DGFC.forecast <- function(H, draws, use_spline = FALSE){
+#DGFC.forecast <- function(H, draws, use_spline = FALSE, use_ecdf = FALSE, Y = NULL){
+DGFC.forecast <- function(H, draws, use_spline = FALSE, use_ecdf = FALSE,
+                          Y = NULL, pad_mult = 1){
   # ----------------------------------------------------
   # dims
   # ----------------------------------------------------
@@ -262,6 +266,30 @@ DGFC.forecast <- function(H, draws, use_spline = FALSE){
   n <- dim(draws$Z)[2]
   ndraw <- dim(draws$Z)[3]
   k.star = dim(draws$S)[1]
+  
+  #[ADDED]
+  # ----------------------------------------------------
+  # fixed ECDF margins, if requested
+  #
+  # The empirical CDF does not vary across draws, so build it once.
+  # Y must be exactly the matrix that was passed to DGFC.mcmc for
+  # this origin. Passing the full series leaks future data.
+  # ----------------------------------------------------
+  
+  if(use_ecdf == TRUE){
+    
+    if(is.null(Y))     stop("use_ecdf = TRUE requires Y")
+    if(ncol(Y) != n)   stop("Y has the wrong number of columns")
+    
+    ecdf_x <- vector("list", n)
+    ecdf_F <- vector("list", n)
+    
+    for(j in 1:n){
+      xj          <- sort(unique(Y[, j]))
+      ecdf_x[[j]] <- xj
+      ecdf_F[[j]] <- ecdf(Y[, j])(xj)
+    }
+  }
   
   # ----------------------------------------------------
   # preallocate storage
@@ -295,13 +323,42 @@ DGFC.forecast <- function(H, draws, use_spline = FALSE){
     
     for(j in 1:n){
       u = pnorm(new_Z[, j], mean = 0, sd = sqrt(Zcov[j, j]))
-      xj = draws$ma[[j]][, 1, m]
-      Fxj = draws$ma[[j]][, 2, m]
+      
+      #[CHANGED]
+      #xj = draws$ma[[j]][, 1, m]
+      #Fxj = draws$ma[[j]][, 2, m]
+      if(use_ecdf == TRUE){
+        xj  = ecdf_x[[j]]
+        Fxj = ecdf_F[[j]]
+      }else{
+        xj  = draws$ma[[j]][, 1, m]
+        Fxj = draws$ma[[j]][, 2, m]
+      }
+      
+      # if(use_spline == TRUE){
+      #   # JZ: only makes sense for continuous data!
+      #   F_inv = splinefun(c(0, Fxj, 1),
+      #                     c(min(xj) - sd(xj), xj, max(xj) + sd(xj)),
+      #                     method = c("monoH.FC"))
+      #   Ypred[, j, m] = sapply(u, F_inv)
+      # }else{
       if(use_spline == TRUE){
         # JZ: only makes sense for continuous data!
-        F_inv = splinefun(c(0, Fxj, 1),
-                          c(min(xj) - sd(xj), xj, max(xj) + sd(xj)),
-                          method = c("monoH.FC"))
+        # Pad the knots out to F = 0 and F = 1, but only where Fxj does not
+        # already reach them. The ECDF hits 1 exactly at max(xj), and padding
+        # there would duplicate a knot and break splinefun.
+        Fk <- Fxj
+        xk <- xj
+        if(min(Fk) > 0){
+          Fk <- c(0, Fk)
+          xk <- c(min(xj) - sd(xj), xk)
+        }
+        if(max(Fk) < 1){
+          Fk <- c(Fk, 1)
+          #xk <- c(xk, max(xj) + sd(xj))
+          xk <- c(xk, max(xj) + pad_mult * sd(xj))
+        }
+        F_inv = splinefun(Fk, xk, method = c("monoH.FC"))
         Ypred[, j, m] = sapply(u, F_inv)
       }else{
         Fxj[length(xj)] = 1
