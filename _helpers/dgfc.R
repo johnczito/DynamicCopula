@@ -268,6 +268,12 @@ DGFC.forecast <- function(H, draws, use_spline = FALSE, use_ecdf = FALSE,
   k.star = dim(draws$S)[1]
   
   #[ADDED]
+  # recycle so callers can pass one flag or one per variable. The VARMA Copula
+  # DGP has a Poisson variable and a skew-t variable in the same series, and
+  # splining a step function is wrong.
+  use_spline <- rep_len(use_spline, n)
+  
+  #[ADDED]
   # ----------------------------------------------------
   # fixed ECDF margins, if requested
   #
@@ -342,7 +348,7 @@ DGFC.forecast <- function(H, draws, use_spline = FALSE, use_ecdf = FALSE,
       #                     method = c("monoH.FC"))
       #   Ypred[, j, m] = sapply(u, F_inv)
       # }else{
-      if(use_spline == TRUE){
+      if(use_spline[j] == TRUE){
         # JZ: only makes sense for continuous data!
         # Pad the knots out to F = 0 and F = 1, but only where Fxj does not
         # already reach them. The ECDF hits 1 exactly at max(xj), and padding
