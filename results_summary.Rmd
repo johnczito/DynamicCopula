@@ -20,24 +20,53 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
 # Inputs. Set the working directory to wherever these live, or edit the paths.
 # ------------------------------------------------------------------------------
 
-F_MACRO  <- "macro_k14_metrics.rds"
-F_DEGEN  <- "degenerate_draw_test.rds"
-F_CRIME  <- "experiement_crime_stage_8675309/crime_fcasts_k10.csv"
-F_CRIMEA <- "experiement_crime_stage_8675309/crime_ablation_k10.csv"
-F_MACROA <- "experiement_macro_stage_8675309/macro_ablation_k14.csv"
+CRIME_DIR <- "crime_k10_s8675309"
+MACRO_DIR <- "macro_k14_s8675309_stbl"
+CRIME_TAG <- "k10_s8675309"
+MACRO_TAG <- "k14_s8675309_stbl"
+
+F_CRIME   <- file.path(CRIME_DIR, sprintf("crime_fcasts_%s.csv", CRIME_TAG))
+F_CRIMEL  <- file.path(CRIME_DIR, sprintf("crime_fcasts_labeled_%s.csv", CRIME_TAG))
+F_CRIMEA  <- file.path(CRIME_DIR, sprintf("crime_ablation_%s.csv", CRIME_TAG))
+F_CRIMEWS <- file.path(CRIME_DIR, sprintf("crime_%s_after_loop.RData", CRIME_TAG))
+F_MACRO   <- file.path(MACRO_DIR, sprintf("macro_metrics_%s.rds", MACRO_TAG))
+F_MACROL  <- file.path(MACRO_DIR, sprintf("macro_table_labeled_%s.csv", MACRO_TAG))
+F_DEGEN   <- "degenerate_draw_test.rds"
 
 RUN_CRIME_SIG <- TRUE
-F_CRIMEWS     <- "experiement_crime_stage_8675309/crime_k10_after_loop.RData"
 
 has <- function(f) file.exists(f)
 
 m <- if (has(F_MACRO)) readRDS(F_MACRO) else NULL
 d <- if (has(F_DEGEN)) readRDS(F_DEGEN) else NULL
 
-COL <- c(DGFC = "#1b4f72", BVAR = "#c0392b",
-         DLM = "#7d8a2e", `SV-BVAR` = "#b7791f")
+COL  <- c(DGFC = "#0072B2", BVAR = "#E69F01",
+          DLM  = "#56B4E9", `SV-BVAR` = "#CC79A7")
+PAIR <- c("grey25", "grey70")
+PCH  <- c(DGFC = 21, BVAR = 22, DLM = 24, `SV-BVAR` = 23)
 
-# Newey-West t on a loss differential. Positive => the DGFC is WORSE.
+# Bold the best entry in each row for a kable going to LaTeX
+# how = "min" (lower is better), "max", or "target" (closest to `target`)
+# Ties are all bolded
+bold_best <- function(M, how = c("min", "max", "target"),
+                      target = 0.95, digits = 3) {
+  how <- match.arg(how)
+  out <- t(apply(M, 1, function(r) {
+    rr <- round(r, digits)
+    s  <- formatC(rr, format = "f", digits = digits)
+    w  <- switch(how,
+                 min    = rr == min(rr, na.rm = TRUE),
+                 max    = rr == max(rr, na.rm = TRUE),
+                 target = abs(rr - target) == min(abs(rr - target), na.rm = TRUE))
+    s[w] <- paste0("\\textbf{", s[w], "}")
+    s
+  }))
+  colnames(out) <- colnames(M)
+  rownames(out) <- NULL
+  out
+}
+
+# Newey-West t on a loss differential. Positive => the DGFC is WORSE
 nw_t <- function(dd) {
   dd <- dd[is.finite(dd)]
   Tn <- length(dd)
@@ -50,7 +79,7 @@ nw_t <- function(dd) {
 ```
 
 ```{r file-check, results = "asis"}
-fl <- c(F_MACRO, F_DEGEN, F_CRIME, F_CRIMEA, F_MACROA, F_CRIMEWS)
+fl <- c(F_MACRO, F_MACROL, F_DEGEN, F_CRIME, F_CRIMEL, F_CRIMEA, F_CRIMEWS)
 missing <- fl[!file.exists(fl)]
 if (length(missing)) {
   cat("**Inputs not found in `", getwd(), "`:**\n\n", sep = "")
@@ -102,45 +131,38 @@ significant at |t| > 1.96.
 
 # Macro, Table 2 at saturated k
 
-```{r macro-write}
-if (!is.null(m)) {
-  f <- m$finals
-  models <- c("DGFC", "BVAR", "DLM", "SV-BVAR")
-  macro_lab <- do.call(rbind, lapply(seq_along(m$var_names), function(i)
-    data.frame(series = m$var_names[i], model = models,
-               MSE  = round(c(f$dfc[i,1], f$var[i,1], f$dlm[i,1], f$svbvar[i,1]), 3),
-               COV  = round(c(f$dfc[i,2], f$var[i,2], f$dlm[i,2], f$svbvar[i,2]), 3),
-               SIZE = round(c(f$dfc[i,3], f$var[i,3], f$dlm[i,3], f$svbvar[i,3]), 3),
-               CRPS = round(c(f$dfc[i,4], f$var[i,4], f$dlm[i,4], f$svbvar[i,4]), 3),
-               stringsAsFactors = FALSE)))
-  write.csv(macro_lab, "macro_table_k14_labeled.csv", row.names = FALSE)
-}
-```
-
-The full four-metric table is in `macro_table_k14_labeled.csv`. Split here into
+The full four-metric table is in `r basename(F_MACROL)`. Split here into
 the two views that matter.
 
 ```{r macro-crps}
 if (!is.null(m)) {
-  f <- m$finals
-  tb <- data.frame(series = m$var_names,
-                   DGFC = round(f$dfc[,4], 3), BVAR = round(f$var[,4], 3),
-                   DLM = round(f$dlm[,4], 3), `SV-BVAR` = round(f$svbvar[,4], 3),
+  f  <- m$finals
+  M  <- cbind(DGFC = f$dfc[,4], BVAR = f$var[,4],
+              DLM = f$dlm[,4], `SV-BVAR` = f$svbvar[,4])
+  tb <- data.frame(series = m$var_names, bold_best(M, "min", digits = 3),
                    check.names = FALSE, stringsAsFactors = FALSE)
-  knitr::kable(tb, caption = "CRPS, lower is better.")
+  knitr::kable(tb, escape = FALSE, align = c("l", rep("r", 4)),
+               caption = "CRPS, lower is better. Best per row in bold.")
 }
 ```
 
 ```{r macro-cov}
 if (!is.null(m)) {
-  f <- m$finals
-  tb <- data.frame(series = m$var_names,
-                   `cov DGFC` = round(f$dfc[,2], 3), `cov SV` = round(f$svbvar[,2], 3),
-                   `cov BVAR` = round(f$var[,2], 3), `cov DLM` = round(f$dlm[,2], 3),
-                   `sz DGFC` = round(f$dfc[,3], 2),  `sz SV` = round(f$svbvar[,3], 2),
-                   `sz BVAR` = round(f$var[,3], 2),  `sz DLM` = round(f$dlm[,3], 2),
+  f  <- m$finals
+  Mc <- cbind(DGFC = f$dfc[,2], SV = f$svbvar[,2],
+              BVAR = f$var[,2], DLM = f$dlm[,2])
+  Ms <- cbind(DGFC = f$dfc[,3], SV = f$svbvar[,3],
+              BVAR = f$var[,3], DLM = f$dlm[,3])
+
+  cb <- bold_best(Mc, "target", target = 0.95, digits = 3)
+  sz <- formatC(round(Ms, 2), format = "f", digits = 2)
+  colnames(cb) <- paste("cov", colnames(Mc))
+  colnames(sz) <- paste("sz",  colnames(Ms))
+
+  tb <- data.frame(series = m$var_names, cb, sz,
                    check.names = FALSE, stringsAsFactors = FALSE)
-  knitr::kable(tb, caption = "Coverage against a 0.95 nominal, and 95% interval width.")
+  knitr::kable(tb, escape = FALSE, align = c("l", rep("r", 8)),
+               caption = "Coverage against a 0.95 nominal, with the closest in bold, and 95\\% interval width.")
 }
 ```
 
@@ -157,7 +179,7 @@ if (!is.null(m)) {
   cv <- cbind(f$dfc[,2], f$var[,2], f$dlm[,2], f$svbvar[,2])
   szn <- sz / sz[, 1]
 
-  par(mar = c(4.2, 4.2, 2.2, 7.5), xpd = NA)
+  par(mar = c(4.2, 4.2, 2.2, 7), xpd = NA)
   plot(NA, xlim = range(szn) * c(0.8, 1.25), ylim = c(0.86, 1.01), log = "x",
        xlab = "interval width, relative to DGFC (log scale)",
        ylab = "empirical coverage", cex.lab = 0.9, cex.axis = 0.85,
@@ -165,9 +187,11 @@ if (!is.null(m)) {
   par(xpd = FALSE)
   abline(h = 0.95, lty = 2)
   abline(v = 1, col = "grey85")
-  for (j in 1:4) points(szn[, j], cv[, j], pch = 19, col = COL[j], cex = 1)
-  legend(par("usr")[2] * 1.15, 1.0, names(COL), pch = 19, col = COL,
-         bty = "o", cex = 0.85, xjust = -1, yjust = 2.5)
+  for (j in c(1, 3, 2, 4))
+    points(szn[, j], cv[, j], pch = PCH[j], bg = COL[j],
+           col = "white", lwd = 0.6, cex = 1.3)
+  legend(par("usr")[2] * 1.15, 1.0, names(COL), pch = PCH, pt.bg = COL,
+         col = COL, bty = "o", cex = 0.85, xjust = -1, yjust = 2.5)
   par(xpd = FALSE)
 }
 ```
@@ -216,9 +240,11 @@ if (!is.null(m)) {
   abline(v = c(-1.96, 1.96), lty = 2)
   abline(v = 0, col = "grey50")
   axis(2, at = 1:nn, labels = rownames(tm)[o], las = 1, cex.axis = 0.75, tick = FALSE)
-  for (j in 1:3) points(tm[o, j], 1:nn, pch = 19, col = COL[j + 1], cex = 0.95)
-  legend("bottomleft", colnames(tm), pch = 19, col = COL[2:4], bty = "o",
-         cex = 0.8, horiz = FALSE, inset = c(0.06, 0.3))
+  for (j in c(2, 1, 3))
+    points(tm[o, j], 1:nn, pch = PCH[j + 1], bg = COL[j + 1],
+           col = "white", lwd = 0.6, cex = 1.15)
+  legend("bottomleft", colnames(tm), pch = PCH[2:4], pt.bg = COL[2:4],
+         col = COL[2:4], bty = "o", cex = 0.8, inset = c(0.06, 0.3))
 }
 ```
 
@@ -229,25 +255,13 @@ failure.
 # Crime, Table 1 at saturated k
 
 ```{r crime-table, results = "asis"}
-if (!has(F_CRIME)) {
-  cat("`", F_CRIME, "` not found.\n\n", sep = "")
+if (!has(F_CRIMEL)) {
+  cat("`", F_CRIMEL, "` not found.\n\n", sep = "")
 } else {
-  ct    <- as.matrix(read.csv(F_CRIME))
-  mods4 <- c("DGFC", "BVAR", "Pois-DGLM", "NB-DGLM")
-  labL  <- c("Murder", "Attempted", "Accessory", "Manslaughter", "Non-domestic assault")
-  labR  <- c("Officer assault", "Abduction", "Blackmail", "Escape custody", "Resist officer")
 
-  crime_lab <- do.call(rbind, lapply(1:5, function(b) {
-    rr <- (4 * b - 3):(4 * b)
-    rbind(data.frame(series = labL[b], model = mods4, MAE = ct[rr, 1],
-                     COV = ct[rr, 2], SIZE = ct[rr, 3], CRPS = ct[rr, 4],
-                     stringsAsFactors = FALSE),
-          data.frame(series = labR[b], model = mods4, MAE = ct[rr, 5],
-                     COV = ct[rr, 6], SIZE = ct[rr, 7], CRPS = ct[rr, 8],
-                     stringsAsFactors = FALSE))
-  }))
-  rownames(crime_lab) <- NULL
-  write.csv(crime_lab, "crime_fcasts_k10_labeled.csv", row.names = FALSE)
+  crime_lab <- read.csv(F_CRIMEL, check.names = FALSE, stringsAsFactors = FALSE)
+  names(crime_lab)[names(crime_lab) == "INT-COV"]  <- "COV"
+  names(crime_lab)[names(crime_lab) == "INT-SIZE"] <- "SIZE"
 
   dgc <- crime_lab[crime_lab$model == "DGFC", ]
   nbc <- crime_lab[crime_lab$model == "NB-DGLM", ]
@@ -279,12 +293,19 @@ if (!has(F_CRIME)) {
   wide <- wide[match(ord, wide$series), ]
   rownames(wide) <- NULL
 
-  print(knitr::kable(wide, caption = "Crime CRPS by model, with the DGFC's coverage and interval width. Full four-metric table in crime_fcasts_k10_labeled.csv."))
+  Mcr <- as.matrix(wide[, c("DGFC", "BVAR", "Pois", "NB")])
+  bcr <- bold_best(Mcr, "min", digits = 2)
+  wide2 <- data.frame(series = wide$series, bcr,
+                      `cov DGFC`  = formatC(wide$`cov DGFC`,  format = "f", digits = 2),
+                      `size DGFC` = formatC(wide$`size DGFC`, format = "f", digits = 2),
+                      check.names = FALSE, stringsAsFactors = FALSE)
+  print(knitr::kable(wide2, escape = FALSE, align = c("l", rep("r", 6)),
+                     caption = paste0("Crime CRPS by model, best per row in bold, with the DGFC's coverage and interval width. Full four-metric table in ", basename(F_CRIMEL), ".")))
 }
 ```
 
 ```{r crime-sig, results = "asis"}
-F_CRIMESIG  <- "crime_k10_crps_per_origin.rds"
+F_CRIMESIG <- file.path(CRIME_DIR, sprintf("crime_crps_per_origin_%s.rds", CRIME_TAG))
 FORCE_CRIME <- FALSE   # TRUE to rebuild the cache even if it exists
 
 cc <- NULL
@@ -298,7 +319,7 @@ if (!FORCE_CRIME && has(F_CRIMESIG)) {
   # get_forecast_metrics() calls interval_score(), which exists in
   # scoringutils 1.2.2 and was removed in 2.x. Attached directly rather than
   # sourcing _packages.R, which tries to unload namespaces and fails once
-  # bayesianVARs is loaded.
+  # bayesianVARs is loaded
   suppressPackageStartupMessages({
     library(scoringutils); library(scoringRules); library(HDInterval)
   })
@@ -310,7 +331,7 @@ if (!FORCE_CRIME && has(F_CRIMESIG)) {
   e <- new.env(); load(F_CRIMEWS, envir = e)
   if (!exists("get_variable_fcasts")) source("_helpers/_helpers.R")
 
-  period <- (e$Tstart + e$H):e$Tstop    # defined after save.image, so rebuild
+  period <- (e$Tstart + e$H):e$Tstop # defined after save.image, so rebuild
   ncr    <- ncol(e$Y)
   arrs   <- list(DGFC = e$fcast_dfc, BVAR = e$fcast_bvar,
                  `Pois-DGLM` = e$fcast_pois, `NB-DGLM` = e$fcast_nbinom)
@@ -342,7 +363,7 @@ if (!is.null(cc)) {
                    t_NB   = round(tt("DGFC", "NB-DGLM"), 2),
                    stringsAsFactors = FALSE)
 
-  print(knitr::kable(cs, caption = "Crime, Newey-West t on per-origin CRPS over 284 origins. Negative means the DGFC is better."))
+  print(knitr::kable(cs, caption = sprintf("Crime, Newey-West t on per-origin CRPS over %d origins. Negative means the DGFC is better.", length(cc$period))))
 
   cat(sprintf("\n\nDGFC significantly better on %d of %d series against the BVAR, %d against the Poisson DGLM, and %d against the NB DGLM. Significantly worse on %d.\n\n",
               sum(cs$t_BVAR < -1.96), ncr, sum(cs$t_Pois < -1.96),
@@ -366,8 +387,8 @@ leaving everything else alone. This is the direct answer to what margin
 estimation buys.
 
 ```{r ablation-text, results = "asis"}
-# Built from macro_k14_metrics.rds rather than the CSV, so it can't drift
-# out of sync with the rest of the document.
+# Built from the macro metrics rds rather than the ablation CSV, so it cannot
+# drift out of sync with the rest of the document
 ab_m <- if (!is.null(m)) {
   f <- m$finals
   data.frame(series   = m$var_names,
@@ -452,11 +473,11 @@ if (!is.null(m) && !is.null(m$gap)) {
   mt <- rbind(as.numeric(tapply(rowMeans(rel[,  lev]), m$era, mean)),
               as.numeric(tapply(rowMeans(rel[, -lev]), m$era, mean)))
   barplot(mt, beside = TRUE, names.arg = levels(m$era), las = 2, border = NA,
-          col = c(COL[4], "grey70"), ylab = "rel. CRPS advantage",
+          col = PAIR, ylab = "rel. CRPS advantage",
           main = "Levels vs growth", cex.main = 1, cex.names = 0.7,
           cex.axis = 0.8, cex.lab = 0.85)
   abline(h = 0)
-  legend("topleft", c("4 levels", "10 growth"), fill = c(COL[4], "grey70"),
+  legend("topleft", c("4 levels", "10 growth"), fill = PAIR,
          border = NA, bty = "n", cex = 0.7)
   par(mfrow = c(1, 1))
 }
@@ -501,14 +522,14 @@ if (!is.null(d)) {
 
   plot(d$vsel[seq_len(nvv)], d$eig[, "eig_good"], type = "b", pch = 19,
        ylim = c(min(d$eig[, c("eig_good", "eig_bad")]) - 0.004, 1.002),
-       col = COL[1], xlab = "vintage index", ylab = "spectral radius of G",
+       col = PAIR[1], xlab = "vintage index", ylab = "spectral radius of G",
        main = "Against the unit-root boundary", cex.main = 1, cex = 0.8,
        cex.lab = 0.85, cex.axis = 0.8)
   lines(d$vsel[seq_len(nvv)], d$eig[, "eig_bad"], type = "b", pch = 19,
-        col = COL[2], cex = 0.8)
+        col = PAIR[2], cex = 0.8)
   abline(h = 1, lty = 2)
   legend("bottomright", c("typical draws", "worst 5%"), pch = 19,
-         col = COL[1:2], bty = "n", cex = 0.7)
+         col = PAIR[1:2], bty = "n", cex = 0.7)
 
   barplot(as.numeric(d$tab$difference), names.arg = d$tab$dropped, border = NA,
           col = "grey70", xlab = "share of draws dropped",
@@ -534,13 +555,15 @@ if (!is.null(m) && !is.null(m$svbvar_nstable)) {
 The macro data is not stationary, both models say so. The cost to the DGFC is
 two series out of fourteen.
 
+\newpage
+
 # Provenance
 
 | Output | Produced by |
 |:--------------------------------|:---------------------------------|
-| `crime_fcasts_k10.csv`, `crime_ablation_k10.csv` | crime pipeline, k = 10, 5000/5000 |
-| `macro_table_k14.csv`, `macro_ablation_k14.csv` | macro pipeline, k = 14, 5000/5000 |
-| `macro_k14_metrics.rds` | macro pipeline post-processing |
+| `crime_fcasts_k10_s8675309.csv`, `crime_ablation_k10_s8675309.csv` | crime pipeline, k = 10, 5000/5000, seed 8675309 |
+| `macro_table_k14_s8675309_stbl.csv`, `macro_ablation_k14_s8675309_stbl.csv` | macro pipeline, k = 14, 5000/5000, seed 8675309, stable = TRUE |
+| the two `*_labeled_*.csv` files and `macro_metrics_k14_s8675309_stbl.rds` | `postprocess_tables.R` |
 | `degenerate_draw_test.rds` | `test_degenerate_draws.R`, 20 vintages |
 | MCMC settings (5000 after 5000) | `dgfc_ess_diagnostic.R` |
 | DGLM importance-weight degeneracy | `dglm_diagnostic.R` |

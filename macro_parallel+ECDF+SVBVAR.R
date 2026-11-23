@@ -8,12 +8,12 @@ source("_helpers/_helpers.R")
 library(future)
 library(future.apply)
 
-#[CHANGED]
 REPO <- getwd()
 plan(multisession, workers = max(1, availableCores() - 1))
 
-set.seed(8675309)
-#set.seed(42065)
+#SEED <- 42065
+SEED <- 8675309
+set.seed(SEED)
 
 continuous_forecast_metrics <- function(obs, alph, fcast_draws){
   fcast_mean <- mean(fcast_draws)
@@ -121,7 +121,9 @@ ma_top_q       <- array(0, c(5, n, Fend))
 fcast_dlm =  array(0, c(n, dlm_ndraw, Fend))
 actuals = matrix(0, Fend, n)
 
-CKPT_DIR <- sprintf("_ckpt_macro_k%d", factor_dim)
+SV_TAG   <- if (svbvar_stable) "stbl" else "all"
+TAG      <- sprintf("k%d_s%d_%s", factor_dim, SEED, SV_TAG)
+CKPT_DIR <- sprintf("_ckpt_macro_%s", TAG)
 dir.create(CKPT_DIR, showWarnings = FALSE)
 
 settings <- list(
@@ -146,6 +148,13 @@ settings <- list(
   dfc_nthin    = dfc_nthin,
   factor_dim   = factor_dim
 )
+
+cfg_file <- file.path(CKPT_DIR, "_config.rds")
+cfg <- settings[setdiff(names(settings), c("repo", "ckpt_dir"))]
+if (file.exists(cfg_file)) {
+  if (!identical(readRDS(cfg_file), cfg))
+    stop("checkpoint dir ", CKPT_DIR, " holds a different configuration; delete it")
+} else saveRDS(cfg, cfg_file)
 
 # ==============================================================================
 # run it hot!
@@ -218,10 +227,10 @@ run_vintage <- function(v, RTMD, s) {
   # ---------------------------
   # SV BVAR (Gruber & Kastner)
   #
-  # Namespace-qualified: the BVAR package also exports bvar().
+  # Namespace-qualified: the BVAR package also exports bvar()
   # stable = TRUE keeps only stationary draws, matching the restriction the
   # DGFC imposes on its own factor VAR by rejection sampling. The surviving
-  # count varies a lot by vintage and is worth recording.
+  # count varies a lot by vintage and is worth recording
   # ---------------------------
   
   Ysv <- Y
@@ -234,7 +243,9 @@ run_vintage <- function(v, RTMD, s) {
                                sv_keep = "last",
                                quiet   = TRUE)
   
-  sv_pred <- predict(sv_fit, ahead = 1, each = 1, stable = s$svbvar_stable)
+  #sv_pred <- predict(sv_fit, ahead = 1, each = 1, stable = s$svbvar_stable)
+  sv_pred <- suppressMessages(
+    predict(sv_fit, ahead = 1, each = 1, stable = s$svbvar_stable))
   
   o$svbvar         <- sv_pred$predictions[1, , ]
   o$svbvar_nstable <- dim(sv_pred$predictions)[3]
@@ -254,7 +265,7 @@ run_vintage <- function(v, RTMD, s) {
   # o$dfc <- DGFC.forecast(1, draws, use_spline = TRUE)[1, , ]
   # Both arms off the same fit. The RNG state is restored between calls so
   # the latent forward simulations are identical and the only difference is
-  # the margin transform. That makes the ablation a paired comparison.
+  # the margin transform. That makes the ablation a paired comparison
   rng_state <- if (exists(".Random.seed", envir = .GlobalEnv))
     get(".Random.seed", envir = .GlobalEnv) else NULL
   
@@ -267,7 +278,7 @@ run_vintage <- function(v, RTMD, s) {
   
   # F at the largest observed value, quantiles over draws. Cheap to store,
   # and it tells you whether the margin-adjusted arm's upper tail came from
-  # the sampler or from the padding.
+  # the sampler or from the padding
   o$ma_top_q <- sapply(seq_len(s$n), function(j) {
     mm <- draws$ma[[j]]
     quantile(mm[dim(mm)[1], 2, ], c(0, .01, .05, .25, .5))
@@ -315,6 +326,7 @@ if (length(failed)) {
 } else {
   message("All vintages completed.")
 }
+if (length(failed)) stop("cannot build the tables with ", length(failed), " failed vintages")
 
 for (i in seq_along(vints)) {
   vv <- vints[i]
@@ -332,7 +344,8 @@ for (i in seq_along(vints)) {
 rm(results)
 gc()
 
-save.image(sprintf("macro_k%d_after_loop.RData", factor_dim))
+save.image(sprintf("macro_%s_after_loop.RData", TAG))
+
 # ==============================================================================
 # post-process
 # ==============================================================================
@@ -378,7 +391,7 @@ paper_table = round(rbind(cbind(fcast_comparison[, , 1], fcast_comparison[, , 2]
       cbind(fcast_comparison[, , 11], fcast_comparison[, , 12]),
       cbind(fcast_comparison[, , 13], fcast_comparison[, , 14])), digits = 2)
 
-write.csv(paper_table, sprintf("macro_table_k%d.csv", factor_dim), row.names = F)
+write.csv(paper_table, sprintf("macro_table_%s.csv", TAG), row.names = FALSE)
 
 # ==============================================================================
 # ECDF ablation
@@ -407,7 +420,7 @@ ablation <- data.frame(
 )
 
 print(ablation)
-write.csv(ablation, sprintf("macro_ablation_k%d.csv", factor_dim), row.names = FALSE)
+write.csv(ablation, sprintf("macro_ablation_%s.csv", TAG), row.names = FALSE)
 
 cat("\n--- F at the largest observed value, averaged over vintages ---\n")
 tq <- apply(ma_top_q, c(1, 2), mean)

@@ -1,0 +1,217 @@
+---
+title: "Section 6.2 revision: results summary"
+author: "Ethan Carlson"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+geometry: margin=1in
+fontsize: 11pt
+header-includes:
+  - \usepackage{float}
+output:
+  pdf_document:
+    toc: true
+    number_sections: false
+    fig_caption: false
+---
+
+```{r, include = FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.width = 6.5, fig.height = 4, fig.align = "center",
+                      out.width = "100%")
+```
+
+```{r sim-load, include = FALSE}
+SIM <- readRDS("first_sim_full_run/margincmp_R100_H10_T200.rds")
+fc  <- SIM$fc
+ma  <- SIM$ma
+
+SWEEP_FILE <- "sweepconv_all_T200_R6.rds"
+HAS_SWEEP  <- file.exists(SWEEP_FILE)
+
+DGPS <- c("varma", "varch", "varma_copula")
+DLAB <- c("VARMA", "VARCH", "VARMA Copula")
+TS   <- sort(unique(fc$T))
+COL  <- hcl.colors(4, "viridis")
+
+# Paired differences. Both arms come off one fit with the RNG restored, so
+# difference within (dgp, rep, T, var, h) rather than comparing group means.
+key <- c("dgp", "rep", "T", "var", "h")
+w <- merge(fc[fc$arm == "ma",   c(key, "crps", "cov", "size", "oor", "rho")],
+           fc[fc$arm == "ecdf", c(key, "crps", "cov", "size")],
+           by = key, suffixes = c(".ma", ".ec"))
+w$pen <- 100 * (w$crps.ec / w$crps.ma - 1)
+
+f1 <- aggregate(cov ~ dgp + T + arm, data = fc[fc$h == 1, ], FUN = mean)
+
+cov_panel <- function(x, ys, cols, ylab, main, ylim) {
+  plot(x, ys[[1]], type = "n", log = "x", ylim = ylim, xaxt = "n",
+       xlab = "sample size T", ylab = ylab, main = main)
+  axis(1, at = TS, labels = TS)
+  abline(h = 0.95, lty = 2, col = "grey40")
+  for (i in seq_along(ys)) {
+    lines(x, ys[[i]], col = cols[i], lwd = 2)
+    points(x, ys[[i]], pch = 19, col = cols[i], cex = 1.1)
+  }
+}
+```
+
+\newpage
+
+# Proposed Section 6.2: margin adjustment against a frozen ECDF
+
+Three data generating processes from Section 6.1 (VARMA, VARCH, VARMA Copula), sample sizes $T = 25, 50, 100, 200$, 100 replicates each with parameters redrawn every replicate. Both arms are forecast from the *same* posterior fit with the RNG state restored between calls, so the latent forward simulations are identical and the only difference is how the margin is treated.
+
+```{r sim-main-fig, fig.height = 2.6, fig.pos = "H", fig.cap = "Coverage of the 95\\% forecast interval at $h = 1$, against training sample size. Each point is 200 forecasts (100 replicates, two variables). Dashed line is nominal."}
+par(mfrow = c(1, 3), mar = c(4.2, 4.2, 2.4, 0.8))
+for (i in seq_along(DGPS)) {
+  z  <- f1[f1$dgp == DGPS[i], ]
+  zm <- z[z$arm == "ma",   ]; zm <- zm[order(zm$T), ]
+  ze <- z[z$arm == "ecdf", ]; ze <- ze[order(ze$T), ]
+  cov_panel(zm$T, list(zm$cov, ze$cov), c(COL[1], COL[3]),
+            if (i == 1) "forecast interval coverage" else "", DLAB[i],
+            c(0.82, 1.00))
+  if (i == 1)
+    legend("bottomright", c("margin adjustment", "frozen ECDF"),
+           col = c(COL[1], COL[3]), lwd = 2, pch = 19, bty = "n", cex = 0.85)
+}
+```
+
+```{r sim-main-table}
+pool <- aggregate(cov ~ T + arm, data = fc[fc$h == 1, ], FUN = mean)
+pw   <- reshape(pool, idvar = "T", timevar = "arm", direction = "wide")
+
+# Exact McNemar on discordant pairs: the arms share a fit, so the coverage
+# indicators are paired.
+mcn <- function(T0) {
+  m   <- w[w$h == 1 & w$T == T0, ]
+  b01 <- sum(m$cov.ma == 1 & m$cov.ec == 0)
+  b10 <- sum(m$cov.ma == 0 & m$cov.ec == 1)
+  if (b01 + b10 == 0) return(NA_real_)
+  binom.test(b01, b01 + b10, 0.5)$p.value
+}
+
+tab <- data.frame(
+  `T`              = pw$T,
+  `frozen ECDF`    = sprintf("%.3f", pw$cov.ecdf),
+  `margin adj.`    = sprintf("%.3f", pw$cov.ma),
+  `ECDF shortfall` = sprintf("%.3f", 0.95 - pw$cov.ecdf),
+  `adj. shortfall` = sprintf("%.3f", 0.95 - pw$cov.ma),
+  `McNemar p`      = sprintf("%.3f", vapply(pw$T, mcn, 0)),
+  check.names = FALSE)
+
+kable(tab, booktabs = TRUE, row.names = FALSE, align = rep("r", 6),
+      caption = "Forecast interval coverage at $h = 1$, pooled across the three DGPs and both variables (600 forecasts per cell). Nominal is 0.95.")
+```
+
+The benefit is concentrated in small samples. At $T = 25$ the frozen margin undercovers by 8 points and the estimated margin by 3.3, so estimating $F$ closes about three fifths of the gap. By $T = 50$ the estimated margin is at nominal while the frozen one remains about 1.5 points under, a gap that an exact McNemar test on the paired indicators still detects at $T = 100$, and by $T = 200$ the two are indistinguishable.
+
+This is consistent with the real-data applications rather than in tension with them. CRPS is a wash in both. The macro vintages run $T = 84$ to $199$ and the crime series is longer still, so both sit at the upper end of the range in which the margin adjustment changes anything. The coverage effect in the applications is larger than this simulation produces at matched sample size, which is what one would expect given that none of these three DGPs is as persistent as the macro level series. 
+
+Point accuracy and CRPS are unaffected; the gain is specific to interval calibration. Supporting detail is in the appendix.
+
+# Appendix: supporting detail
+
+## A.1 Chain length for margin inference
+
+```{r sim-chain-table, eval = HAS_SWEEP}
+SW <- readRDS(SWEEP_FILE)
+SW$sweeps <- factor(SW$sweeps, levels = c("10k", "40k", "160k"))
+ct <- aggregate(cbind(width, cov, l1) ~ dgp + sweeps, data = SW, FUN = mean)
+ct$dgp <- DLAB[match(ct$dgp, DGPS)]
+ct <- ct[order(ct$dgp, ct$sweeps), ]
+names(ct) <- c("DGP", "sweeps", "band width", "band coverage", "mean |error|")
+kable(ct, booktabs = TRUE, row.names = FALSE, digits = c(0, 0, 4, 3, 4),
+      linesep = c("", "", "\\addlinespace"),
+      caption = "Three DGPs at $T = 200$, 6 replicates each, retained draws held at 500. Nominal coverage is 0.95.")
+```
+
+```{r sim-chain-missing, eval = !HAS_SWEEP, results = "asis"}
+cat(sprintf("\\emph{Table omitted: %s not found.}\n", SWEEP_FILE))
+```
+
+The margin posterior's credible band is sensitive to the MCMC budget in a way the predictive is not. Coverage at $T = 200$ improves from between 0.79 and 0.93 at the default 10,000 sweeps to between 0.86 and 0.96 at 160,000, and the chains are not converged even there, with band width still climbing by 18 to 42 percent. 
+
+The cause is the latent block, where each $z$ is updated singly, truncated to its neighbouring ranks. Those intervals narrow as the observations fill in, so the budget required grows with $T$. Section 3.1 notes this as an expense to Monte Carlo efficiency.
+
+Forecasting is unaffected, because the predictive integrates over the forward simulation of the latent process. On the same 10,000-sweep fits, predictive interval coverage at $T = 200$ runs between 0.925 and 0.975. The default is adequate for every result reported here, and credible bands for $F$ at $T = 200$ are not among them.
+
+\newpage
+
+## A.2 Point accuracy and density scores
+
+```{r sim-l1-table}
+l1  <- aggregate(ma_l1 ~ dgp + T + arm, data = ma, FUN = mean)
+l1w <- reshape(l1, idvar = c("dgp", "T"), timevar = "arm", direction = "wide")
+l1w$pct <- round(100 * (l1w$ma_l1.ma / l1w$ma_l1.ecdf - 1), 1)
+l1w$dgp <- DLAB[match(l1w$dgp, DGPS)]
+names(l1w) <- c("DGP", "T", "frozen ECDF", "margin adj.", "diff %")
+kable(l1w[order(l1w$DGP, l1w$T), ], booktabs = TRUE, row.names = FALSE,
+      digits = 4,
+      caption = "Mean absolute error of the estimated margin against the true $F$. Both arms converge. A positive difference means the margin adjustment is the less accurate point estimate.")
+```
+
+Both arms converge at the expected rate, which is the direct check that nothing in the sampler is broken. The margin adjustment is a few percent less accurate as a point estimate from $T = 50$ onward, though the gap is small and varies by DGP.
+
+```{r sim-crps-table}
+p1 <- w[w$h == 1, ]
+m1 <- aggregate(pen ~ dgp + T, data = p1, FUN = mean)
+s1 <- aggregate(pen ~ dgp + T, data = p1,
+                FUN = function(z) sd(z) / sqrt(length(z)))
+names(m1)[3] <- "mean"; names(s1)[3] <- "se"
+ct2 <- merge(m1, s1)
+ct2$dgp  <- DLAB[match(ct2$dgp, DGPS)]
+ct2$mean <- sprintf("%+.1f", round(ct2$mean, 1) + 0)
+ct2$se   <- sprintf("%.1f",  ct2$se)
+names(ct2) <- c("DGP", "T", "mean %", "s.e.")
+kable(ct2[order(ct2$DGP, ct2$T), ], booktabs = TRUE, row.names = FALSE,
+      caption = "CRPS at $h = 1$, paired difference. Positive means freezing $F$ is worse.")
+```
+
+CRPS is a wash with no pattern in sample size, matching the real data where the median change across both applications was under one percent. The benefit of estimating the margin is in calibration, not sharpness or the density score.
+
+## A.3 Mechanism
+
+An empirical CDF can place no probability outside the range it has already seen, so the penalty for freezing $F$ should scale with how often the realised value falls outside the training range.
+
+```{r sim-mech-fig, fig.height = 3.1, fig.pos = "H", fig.cap = "Mean CRPS penalty for freezing $F$ at each observed out-of-range rate, with two standard errors. Rates represented by fewer than ten cells are dropped."}
+agg <- aggregate(list(pen = w$pen), by = w[c("dgp", "rep", "T", "var")], FUN = mean)
+oo  <- aggregate(list(oor = w$oor), by = w[c("dgp", "rep", "T", "var")], FUN = mean)
+pm  <- merge(agg, oo)
+pm  <- pm[is.finite(pm$pen) & is.finite(pm$oor), ]
+
+pm$oor_r <- round(pm$oor, 2)
+mn <- aggregate(pen ~ oor_r, data = pm, FUN = mean)
+se <- aggregate(pen ~ oor_r, data = pm, FUN = function(z) sd(z)/sqrt(length(z)))
+nn <- aggregate(pen ~ oor_r, data = pm, FUN = length)
+keep <- nn$pen >= 10
+mn <- mn[keep, ]; se <- se[keep, ]
+
+par(mar = c(4.2, 4.9, 1, 1))
+plot(mn$oor_r, mn$pen, type = "n",
+     xlab = "fraction of future values outside the observed range",
+     ylab = "mean CRPS penalty \n for freezing F (%)",
+     ylim = range(c(mn$pen - 2*se$pen, mn$pen + 2*se$pen, 0)))
+abline(h = 0, lty = 2, col = "grey40")
+arrows(mn$oor_r, mn$pen - 2*se$pen, mn$oor_r, mn$pen + 2*se$pen,
+       angle = 90, code = 3, length = 0.04, col = "grey50")
+lines(mn$oor_r, mn$pen, col = COL[1], lwd = 2)
+points(mn$oor_r, mn$pen, pch = 19, col = COL[1], cex = 1.2)
+
+```
+
+Correlation between the two: **`r round(cor(pm$oor, pm$pen, use = "complete.obs"), 3)`**. Only the point at an out-of-range rate of zero excludes no change, and it falls slightly below it: when nothing leaves the observed range, freezing $F$ is marginally the better estimator.
+
+Rates above 0.4 appear in too few cells to plot, because none of these three DGPs produces a series persistent enough to leave its own support often. That is the same limitation behind the observation in the main text that the coverage effect in the applications exceeds what this simulation produces at matched sample size. The macro level series `ur`, `ffr` and `capu` are far more persistent than anything generated here. Testing the mechanism would require a DGP with a root near unity, which is a change to the design rather than to the analysis.
+
+\newpage
+
+## A.4 Design
+
+Differences from the Section 6.2 this replaces, all of which affect whether the numbers can be relied on:
+
+- **100 replicates** per cell with DGP parameters redrawn each time, against a single realisation. The old script declared `nrep = 10` and never used it.
+- **`burn = 5000`, `thin = 5`**, matching the consistency study in 6.1, against `burn = 0`. Adequate for every forecast comparison reported here, and insufficient for credible bands on $F$ at the largest sample size, as A.1 shows.
+- **Paired arms.** Both forecasts come from one posterior fit with the RNG state restored between calls, so the latent forward draws are identical and only the margin treatment differs. This also makes the comparison robust to the chain-length issue, since any under-exploration applies identically to both arms.
+- **Burn-in discarded from the simulators.** `simulate_stationary_varma` draws its initial lags iid from the stationary marginal, which gets the marginals right but not the autocorrelation between them, and the transient decays at the companion spectral radius. At $T = 25$ that would have contaminated the cell the section exists to measure.
+- **Per-variable spline control.** The VARMA Copula carries a Poisson variable and a skew-t variable in one series; the step inversion is used for the former and the monotone spline for the latter.
+- **Margin accuracy scored against the true** $F$, which the closed-form stationary distributions make possible and which the old section never did.

@@ -55,6 +55,7 @@ NDRAW  <- 1000
 NBURN  <- 5000
 NTHIN  <- 5
 ALPH   <- 0.05
+SEED <- 8675309
 
 if (MODE == "smoke") {
   
@@ -80,14 +81,11 @@ if (MODE == "smoke") {
 # k.star is left at its default, ceiling(0.7 * n) = 2 at n = 2, matching 6.1,
 # which also omits it
 
-# The full-run tag is left exactly as it was so the existing checkpoint
-# directory and rds still match. Other modes carry the draw count, since
-# chain length is the only thing that distinguishes this check
 RUN_TAG <- if (MODE == "full") {
-  sprintf("margincmp_R%d_H%d_T%d", NREP, H, max(T_GRID))
+  sprintf("margincmp_R%d_H%d_T%d_s%d", NREP, H, max(T_GRID), SEED)
 } else {
-  sprintf("margincmp_%s_R%d_H%d_T%d_d%d", toupper(MODE),
-          NREP, H, max(T_GRID), NDRAW)
+  sprintf("margincmp_%s_R%d_H%d_T%d_d%d_s%d", toupper(MODE),
+          NREP, H, max(T_GRID), NDRAW, SEED)
 }
 CKPT_DIR <- sprintf("_ckpt_%s", RUN_TAG)
 
@@ -216,7 +214,7 @@ run_one <- function(task, s) {
 # run
 # ==============================================================================
 
-set.seed(8675309)
+set.seed(SEED)
 run_start <- Sys.time()
 
 results <- future_lapply(

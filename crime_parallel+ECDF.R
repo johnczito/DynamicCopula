@@ -1,18 +1,18 @@
 # ==============================================================================
-# Crime forecasting exercise, parallelized over training/test splits.
+# Crime forecasting exercise, parallelized over training/test splits
 #
 # Same computation as the original loop, restructured so each forecast origin
-# is an independent task.
+# is an independent task
 #
 # 1. As a sequential lapply, this reproduces the original for-loop bit for bit 
-# (identical() on all four forecast arrays). That establishes the restructuring is faithful.
+# (identical() on all four forecast arrays). That establishes the restructuring is faithful
 #
 # 2. As future_lapply, results are reproducible across runs and independent
-# of the number of workers.
+# of the number of workers
 #
 # The second step changes the numbers relative to a sequential run, so each origin 
 # now draws from its own RNG stream rather than one shared sequential stream. 
-# A full run takes around ~10 minutes on 13 workers.
+# A full run takes around ~10 minutes on 13 workers
 #
 # Added backups of individual stages in case of fatal run errors (/_ckpt)
 # I recommend removing it every run, as it takes up a lot of storage
@@ -33,9 +33,9 @@ REPO <- getwd()
 plan(multisession, workers = max(1, availableCores() - 1))
 # plan(multisession, workers = 2)
 
-
-set.seed(42065)
-#set.seed(8675309)
+#SEED <- 42065
+SEED <- 8675309
+set.seed(SEED)
 
 # ==============================================================================
 # load full data
@@ -146,7 +146,7 @@ bvar_lag = 1
 #factor_dim = 3
 factor_dim = n # saturated, per Dan
 
-CKPT_DIR <- sprintf("_ckpt_crime_k%d", factor_dim)
+CKPT_DIR <- sprintf("_ckpt_crime_k%d_s%d", factor_dim, SEED)
 
 col_bvar = "orange"
 col_dfc = "blue"
@@ -209,7 +209,7 @@ settings <- list(
 # Model order (Poisson, negative binomial, BVAR, DGFC) matches the original
 # loop. It no longer affects results under per-task seeding, but keeping it
 # means this file can be switched back to a plain lapply and compared against
-# the original output directly.
+# the original output directly
 # ==============================================================================
 
 run_origin <- function(t, Y, s) {
@@ -307,12 +307,19 @@ origins <- Tstart:Tstop
 
 dir.create(CKPT_DIR, showWarnings = FALSE)
 
+cfg_file <- file.path(CKPT_DIR, "_config.rds")
+cfg <- settings[setdiff(names(settings), c("repo", "ckpt_dir"))]
+if (file.exists(cfg_file)) {
+  if (!identical(readRDS(cfg_file), cfg))
+    stop("checkpoint dir ", CKPT_DIR, " holds a different configuration; delete it")
+} else saveRDS(cfg, cfg_file)
+
 run_start <- Sys.time()
 
 # future.seed = TRUE gives each origin its own L'Ecuyer stream, so results are
 # reproducible and do not depend on worker count. future.chunk.size = 1
 # dispatches one origin at a time: cost grows with t, so the default equal
-# blocks would leave most workers idle waiting on whoever got the last block.
+# blocks would leave most workers idle waiting on whoever got the last block
 results <- future_lapply(
   origins, run_origin, Y = Y, s = settings,
   future.seed       = TRUE,
@@ -328,7 +335,7 @@ message(paste("Loop total:",
 # ==============================================================================
 # assemble
 #
-# results[[i]] corresponds to origins[i], NOT to time index i.
+# results[[i]] corresponds to origins[i], NOT to time index i
 # ==============================================================================
 
 failed <- which(vapply(results, function(r) !is.null(r$error), logical(1)))
@@ -338,6 +345,7 @@ if (length(failed)) {
 } else {
   message("All origins completed.")
 }
+if (length(failed)) stop("cannot build the tables with ", length(failed), " failed origins")
 
 maxeig <- vapply(results, function(r)
   if (is.null(r$maxeig)) NA_real_ else r$maxeig, numeric(1))
@@ -363,7 +371,7 @@ gc()
 
 alpha = 0.05
 
-save.image(sprintf("crime_k%d_after_loop.RData", factor_dim))
+save.image(sprintf("crime_k%d_s%d_after_loop.RData", factor_dim, SEED))
 
 period = (Tstart + H):Tstop
 h = 1
@@ -401,7 +409,7 @@ for(i in 1:n){
 
 mastertable <- cbind(mastertable[1:(nmod * n / 2), ], mastertable[((nmod * n / 2) + 1):(nmod*n), ])
 
-write.csv(mastertable, sprintf("crime_fcasts_k%d.csv", factor_dim), row.names = FALSE)
+write.csv(mastertable, sprintf("crime_fcasts_k%d_s%d.csv", factor_dim, SEED), row.names = FALSE)
 
 message(paste("Total:", round(difftime(Sys.time(), run_start, units = "mins"), 2), "min"))
 
@@ -436,6 +444,6 @@ ablation <- data.frame(series   = my_labs,
                        stringsAsFactors = FALSE)
 
 print(ablation)
-write.csv(ablation, sprintf("crime_ablation_k%d.csv", factor_dim), row.names = FALSE)
+write.csv(ablation, sprintf("crime_ablation_k%d_s%d.csv", factor_dim, SEED), row.names = FALSE)
 
 # Ethan Carlson

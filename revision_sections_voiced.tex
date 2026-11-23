@@ -1,0 +1,618 @@
+% =============================================================================
+% Revised results sections for Zito & Kowal, "A dynamic copula model for
+% probabilistic forecasting of non-Gaussian multivariate time series."
+% Ethan Carlson. Rerun of 20 November 2026, seed 8675309, k = n, 5000/5000.
+%
+% Figures come from figures/*.pdf (export_paper_figures.R) and table bodies
+% from tables/*.tex (export_comparison_tables.R).
+%
+% PATCH MANIFEST (in reading order)
+%   1. Sec. 3.4 (p. 11)   INSERT 1 sentence after MGP sentence; REPLACE
+%                         k = \lceil 0.7n \rceil with k = n.
+%   2. Sec. 5   (p. 19)   INSERT 3 paragraphs at end of section (SV-BVAR and
+%                         explicit BVAR lag orders).
+%   3. Sec. 6   (p. 20)   REPLACE item 2 of the two-item preamble list.
+%   4. Sec. 6.1 (p. 21)   INSERT 2 sentences on T = 200 mixing at end of para 2.
+%   5. Sec. 6.2 (p. 22)   REPLACE entire subsection with inferred-vs-fixed
+%                         margins study (Figure 5, Table 1). Old Fig. 5 deleted.
+%   6. Sec. 7.1 (p. 24)   INSERT 1 paragraph after Fig. 6 discussion (ablation).
+%   7. Sec. 7.1 (p. 25)   REPLACE forecast metrics paragraph + Table 2.
+%   8. Sec. 7.2 (p. 27)   INSERT 1 paragraph after Fig. 7 discussion (ablation),
+%                         with Figure 8 and Table 5.
+%   9. Sec. 7.2 (p. 28)   REPLACE forecast metrics paragraph with 4 paragraphs,
+%                         Figure 9, Table 3, and Table 4.
+%
+% MASTER / SUPPLEMENT HOUSEKEEPING ON MERGE
+%   - Sec. 7.2 setup (p. 27): add SV-BVAR alongside BVAR and DLM.
+%   - Fig. 7 caption (p. 28): update "Abbreviations are in Table 4" to the
+%     renumbered Appendix E variable table.
+%   - Supplement Appendix C (p. 9): update k = \lceil 0.7n \rceil -> k = n.
+%   - Renumber existing supplement figs. 8-10 and tables 3-4 to accommodate new 
+%     main-text Figs. 8-9 and Tables 4-5.
+%
+% Strip the preamble helper macros and everything below the STRIP marker before
+% pasting into the master manuscript.
+% =============================================================================
+
+\documentclass[11pt]{article}
+\nofiles % no .aux, .toc, .lof, .lot. Only .log and .pdf.
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+
+% graphicx pulls epstopdf-base, which wants grfext.sty, missing in this TinyTeX.
+% All figures are PDFs, so mark it loaded and skip it.
+\expandafter\def\csname ver@epstopdf-base.sty\endcsname{2020/01/24}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.7}
+\newcommand{\todo}[1]{\textcolor{red}{[#1]}}
+
+% --- STRIP PREAMBLE HELPERS ON PASTE -----------------------------------------
+% Dummy labels and natbib-compatible lookup macros so \ref, \citet, and \citep
+% render with exact full-paper numbers in standalone mode under \nofiles.
+\makeatletter
+\newcommand{\dummyref}[2]{\@namedef{r@#1}{{#2}{1}}}
+\newcommand{\defcite}[3]{\@namedef{citet@#1}{#2}\@namedef{citep@#1}{#3}}
+\newcommand{\citet}[1]{\@ifundefined{citet@#1}{[#1]}{\@nameuse{citet@#1}}}
+\newcommand{\citep}[1]{\@ifundefined{citep@#1}{(#1)}{\@nameuse{citep@#1}}}
+\makeatother
+
+\dummyref{sec:priors}{3.4}
+\dummyref{sec:sim_margins}{6.2}
+\dummyref{sec:crime}{7.1}
+\dummyref{fig:margin_cov}{5}
+\dummyref{fig:ablation}{8}
+\dummyref{fig:sharpness}{9}
+\dummyref{tab:margin_cov}{1}
+\dummyref{tab:crime}{2}
+\dummyref{tab:macro}{3}
+\dummyref{tab:dm}{4}
+\dummyref{tab:ablation}{5}
+
+\defcite{diebold1995}{Diebold and Mariano (1995)}{(Diebold and Mariano, 1995)}
+\defcite{gneiting2007}{Gneiting et al. (2007)}{(Gneiting et al., 2007)}
+\defcite{gruber2025}{Gruber and Kastner (2025)}{(Gruber and Kastner, 2025)}
+\defcite{bayesianVARs}{Gruber et al. (2026)}{(Gruber et al., 2026)}
+% -----------------------------------------------------------------------------
+
+% grey is the manuscript as it stands, black is new. Locating only, not for
+% pasting.
+\definecolor{papergray}{gray}{0.42}
+\newcommand{\paper}[1]{{\color{papergray}\textit{#1}}}
+\newenvironment{splice}[1]{%
+  \par\medskip\noindent{\small\bfseries #1}\par\smallskip
+  \begingroup\leftskip=1.2em\relax\parindent=0pt\relax\sloppy}%
+  {\par\endgroup\medskip}
+
+\newcommand{\missing}[1]{\textcolor{red}{[\texttt{\detokenize{#1}} missing: run
+  \texttt{\detokenize{export_paper_figures.R}}]}}
+\newcommand{\intab}[1]{\IfFileExists{tables/#1.tex}{\input{tables/#1}}{\missing{tables/#1.tex}}}
+\newcommand{\infig}[1]{\IfFileExists{figures/#1.pdf}{\includegraphics[width=\textwidth]{#1.pdf}}{\missing{figures/#1.pdf}}}
+
+\begin{document}
+
+% =============================================================================
+\section*{Section 3.4, priors and computation}
+
+\begin{splice}{INSERT, one sentence, after the multiplicative gamma process
+sentence (p.~11).}
+
+\paper{For the factor loadings, we use the multiplicative gamma process prior
+(Bhattacharya and Dunson, 2011), which provides ordered shrinkage across the
+columns of $\boldsymbol{\Lambda}$ to reduce sensitivity to the specified number
+of factors $k$.}
+
+We therefore fix $k$ at its saturated value $k = n$ and rely on the prior to
+shrink the redundant loadings toward zero, which removes the choice of factor
+dimension altogether rather than deferring it to a rule of thumb;
+Appendix~\todo{ref} reports forecasts across a range of $k$.
+
+\paper{The variances are assigned $v_i^{-1} \sim$ iid Gamma$(\alpha_0,
+\beta_0)$. Next, we use a conditionally conjugate prior for the VAR parameters
+in (6) \dots}
+
+\end{splice}
+
+\begin{splice}{REPLACE, two characters, four sentences later in the same
+paragraph (p.~11).}
+
+\paper{In each of the simulations and applications that follow, we use the same
+default prior hyperparameters:} $k = n$\paper{, $d_0 = k + 1$,
+$\boldsymbol{\Psi}_0 = \mathbf{I}_k$, $\mathbf{G}_0 = \mathbf{0}$,
+$\mathbf{O}_0 = \mathbf{I}_k$, $\alpha_0 = 1$, $\beta_0 = 0.3$. Further details
+are in the supplement.}
+
+\end{splice}
+
+% The simulations have n = 2, where ceil(0.7n) already equals n, so the "same
+% defaults everywhere" claims in 6.1 and the conclusion are unaffected.
+
+% =============================================================================
+\setcounter{section}{4}
+\section{Competing methods}
+
+\begin{splice}{INSERT, three paragraphs, at the end of Section 5 (p.~19).}
+
+\paper{By default, the static parameters $\mathbf{W}$ (when included) and
+$\mathbf{V}$ are estimated via maximum likelihood.}
+
+\medskip
+Finally, for the macroeconomic application we add a Bayesian VAR with
+stochastic volatility (\textbf{SV-BVAR}), which generalizes~(13) by allowing the
+innovation variances to evolve over time. Time-varying volatility is a central
+feature of macroeconomic data and a standard ingredient of modern forecasting
+VARs, which makes this the most demanding of our Gaussian comparisons. We use
+the implementation of \citet{gruber2025} in the \texttt{bayesianVARs}
+package \citep{bayesianVARs} in \texttt{R}, with $p = 4$ lags, a horseshoe
+prior on the autoregressive coefficients, a factor stochastic volatility
+specification for the innovation covariance, and 5{,}000 draws retained after
+5{,}000 burn-in.
+
+This specification places a latent factor structure in the innovation
+covariance, where the DGFC places one in the copula, meaning the two models are
+factor models of different objects. Posterior draws are restricted to those
+satisfying the stationarity condition, which mirrors the truncation the DGFC
+imposes on its own factor VAR in~(6) and makes the two models comparable on
+that dimension.
+
+The BVAR of~(13) uses $p = 4$ for the macroeconomic data and $p = 1$ for the
+crime counts, in both cases with the default hierarchical Minnesota prior of
+the \texttt{BVAR} package.
+
+\end{splice}
+
+% =============================================================================
+\section{Simulation results}
+
+\begin{splice}{REPLACE item 2 of the two-item list, end of the Section 6
+preamble (p.~20). Item 1 and the lead-in are unchanged.}
+
+\paper{These DGPs present significant challenges: in each case, the DGFC has
+misspecified dynamics and no knowledge about the marginal stationary
+distributions. In that context, we seek to answer two main questions:}
+
+\begin{enumerate}
+\item \paper{Does the margin adjustment posterior provide accurate estimates
+with precise and well-calibrated uncertainty quantification for unknown marginal
+stationary distributions?}
+\item Does inferring the margins improve probabilistic forecasts relative to the
+common practice of fixing them at a point estimate?
+\end{enumerate}
+
+\end{splice}
+
+% Item 2 was: "Does our (pseudo-)posterior predictive distribution provide
+% accurate probabilistic forecasts compared to popular MTS alternatives?"
+% Swapped, not added: that comparison now lives entirely in Section 7.
+
+\subsection{Recovering the marginal stationary distributions}
+
+\begin{splice}{INSERT, two sentences, at the end of the second paragraph of 6.1
+(p.~21). Note the grey sentence it has to sit beside.}
+
+\paper{Notably, convergence is typically quite fast: $T = 50$ or $T = 100$ is
+enough to achieve strong concentration around the ground truth. Taken together,
+these results demonstrate the ability of the margin adjustment posterior to
+quickly and automatically learn the marginal stationary distributions of MTS
+exhibiting a range of distributional features (discrete support, heavy tail,
+skew, etc.) and across a wide variety of underlying dynamics.}
+
+The posterior mean is unaffected, but one caveat applies to the bands at the
+largest sample size. The truncation intervals in the latent sampling step narrow
+as the observations fill in, so the MCMC budget required for the margin
+posterior grows with $T$, and the bands at $T = 200$ are consequently somewhat
+tighter than the pseudo-posterior they approximate (Appendix~\todo{ref}).
+
+\end{splice}
+
+% "convergence is typically quite fast" and "quickly and automatically learn"
+% both need a hedge, or the caveat undercuts Figure 4 two sentences after the
+% paper finishes praising it. Dan's half; flag rather than edit.
+
+\subsection{Inferred versus fixed margins}
+
+% Replaces the old 6.2 outright. Figure 5 and its discussion are scrapped.
+
+Common practice in the MTS copula literature is to fix the margins at a point
+estimate and proceed as though they were known, where the margin adjustment
+infers $F_{1:n}$ jointly with the copula parameters. To isolate what that extra
+layer of uncertainty buys, we rerun the forecasting exercise twice from the same
+posterior fit---once with the margin adjustment, and once with $F_{1:n}$ frozen
+at the empirical CDF of the training window---holding everything else fixed.
+
+We use the same three DGPs, sample sizes $T = 25, 50, 100, 200$, and 100
+replicates per cell with the DGP parameters redrawn on each replicate. Both arms
+are forecast from a single posterior fit with the random number state restored
+between calls, so that the latent forward simulations are identical and the only
+difference between the two is the treatment of the margin. The comparison is
+therefore paired at the level of the individual forecast, and because each DGP
+has a closed-form stationary distribution we can also score each estimated
+margin against the truth.
+
+% \caption still runs off LaTeX's own counter, need to set to match the full-paper
+% slot left free by the scrapped Figure 5.
+\setcounter{figure}{4}
+\begin{figure}[!htbp]
+\centering
+\infig{fig_margin_coverage}
+\caption{Coverage of the 95\% forecast interval at $h = 1$ against training
+sample size, for the margin adjustment and for a margin frozen at the empirical
+CDF. Each point averages 200 forecasts (100 replicates, two variables). The
+dashed line is nominal coverage.}
+\label{fig:margin_cov}
+\end{figure}
+
+\begin{table}[!htbp]
+\centering\small
+\intab{tab_margin_coverage}
+\caption{Forecast interval coverage at $h = 1$, pooled across the three DGPs
+and both variables, 600 forecasts per cell. Shortfall is the distance below the
+0.95 nominal level. The $p$-value is from an exact McNemar test on the paired
+coverage indicators, which is available because both arms are scored on the
+same forecast origins from the same posterior fit.}
+\label{tab:margin_cov}
+\end{table}
+
+The benefit shown in Figure~\ref{fig:margin_cov} and Table~\ref{tab:margin_cov}
+is concentrated in small samples and is specific to interval calibration.
+Inferring the margins closes roughly three fifths of the coverage shortfall at
+$T = 25$ and removes it entirely by $T = 50$, and an exact McNemar test on the
+paired coverage indicators still separates the two arms at $T = 100$. By
+$T = 200$ they are indistinguishable.
+
+The gain does not extend to the other metrics. Measured by mean absolute error
+against the true stationary CDF at the observed values, the inferred margin is a
+four to fourteen percent worse estimate of $F$ itself from $T = 50$ onward in
+all three DGPs. Density forecasts divide by DGP rather than by sample size,
+freezing $F$ being consistently better under the VARCH and consistently worse
+under the VARMA by a few percent either way, and neither under the VARMA copula,
+with no trend in $T$ in any of the three. The benefit of inferring the margins
+is therefore confined to interval calibration.
+
+A likely mechanism is that an empirical CDF assigns no probability outside the
+observed range, and that realized values fall outside that range less often as
+$T$ grows. The simulation offers only weak support for this---the correlation
+between the exceedance rate and the CRPS penalty is 0.24---because none of the
+three DGPs is persistent enough to leave its observed range often. The
+applications of Section~7 are more informative. The shortest macroeconomic
+training window is longer than the shortest crime window, yet the macroeconomic
+ablation shows the larger loss of coverage, which points to the type of series
+rather than to its length.
+
+% =============================================================================
+\setcounter{section}{6}
+\section{Real-data applications}
+
+\subsection{Crime counts in New South Wales, Australia}
+
+\begin{splice}{INSERT, new paragraph, after the Figure 6 discussion (p.~24--25).
+It answers the grey sentence marked with a dagger, which currently rests on
+eyeballing the left panel.}
+
+\paper{Figure 6 displays summaries of the parameter inferences from our model.
+On the left we plot the margin adjustment posterior for a selection of variables
+that exhibit heterogeneous features (small counts, heavy tails, asymmetry).
+$^\dagger$Using the empirical cumulative distribution function (ECDF) as a
+reference point, the margin adjustment appears adequate while also providing
+reasonable uncertainty quantification. On the right, we provide heat map
+posterior summaries \dots In general, cross-sectional correlations persist
+serially, while autocorrelations are strong for each individual series.}
+
+\medskip
+Freezing the margins at the empirical CDF narrows the 95\% intervals by five
+percent on average while lowering empirical coverage from 0.958 to 0.944, so the
+sharper intervals are bought by under-covering rather than by better
+calibration. The rerun holds the posterior fit and everything else fixed, which
+isolates the contribution of inferring $F_{1:n}$ and puts a number on the visual
+comparison in the left panel of Figure 6 (Section~\ref{sec:sim_margins} does
+the same on simulated data). The loss is uneven. Three series fall well below
+nominal once the margin is frozen---blackmail, escaping custody and resisting
+an officer---while non-domestic assault, the highest-count series, is the one
+variable on which the frozen margin covers slightly better
+(Figure~\ref{fig:ablation}, left, and Table~\ref{tab:ablation}). The series
+that are unaffected are those the margin adjustment already over-covers,
+accessory to murder and manslaughter among them, where there is room to absorb a
+narrower interval without falling short of nominal. Density forecasts move in
+the same direction as coverage, with eight of the ten series preferring the
+inferred margin.
+
+\end{splice}
+
+\begin{splice}{REPLACES the whole paragraph on p.~25--26. The original is the
+grey block.}
+
+\paper{Table 1 presents one-month-ahead forecast metrics for each variable,
+averaged over the period January 2000 ($t_0$) to December 2023 ($T$). We compare
+our approach to BVAR($p = 1$) and two count-valued multivariate state space
+models: a Poisson DLGM (P-DGLM) and a negative binomial DGLM (NB-DGLM), both
+using the dynamics from (15). For all variables, the DGFC delivers the best
+density forecasts and the smallest 95\% interval forecasts with near nominal
+coverage. For nine of ten variables, the DGFC provides superior point forecasts,
+often by a large amount.}
+
+\medskip
+% "Poisson DLGM" is a typo in the original, corrected below.
+Table~\ref{tab:crime} presents one-month-ahead forecast metrics for each
+variable, averaged over the period January 2000 ($t_0$) to December 2023 ($T$).
+We compare our approach to BVAR($p=1$) and two count-valued multivariate state
+space models: a Poisson DGLM (P-DGLM) and a negative binomial DGLM (NB-DGLM),
+both using the dynamics from~(15). For all variables, the DGFC delivers the
+best density forecasts and the smallest 95\% interval forecasts with near
+nominal coverage. For nine of ten variables, the DGFC provides superior point
+forecasts, often by a large margin; blackmail is the lone exception, where the
+BVAR attains a smaller mean absolute error at a far greater interval width. The
+NB-DGLM is the only competitor whose coverage is comparable, and it purchases
+that coverage with intervals wider than the DGFC's by factors ranging from
+three to nearly fifty. Diebold--Mariano tests on the per-origin CRPS
+differentials \citep{diebold1995}, computed with Newey--West standard errors,
+confirm that these gaps are not an artifact of sampling noise
+(Table~\ref{tab:dm}). Our approach is significantly better on all ten series
+against the BVAR and the NB-DGLM, on nine of ten against the P-DGLM, and
+significantly worse on none.
+
+\end{splice}
+
+\begin{table}[!htbp]
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\intab{tab_crime}
+\caption{One-month-ahead forecast metrics for the crime count data in
+Figure~1, averaged over the period January 2000 to December 2023. \textbf{MAE}
+is the mean absolute error of the posterior predictive median (smaller is
+better). \textbf{COV} and \textbf{SIZE} are the empirical coverage and average
+length of 95\% credible intervals based on posterior predictive quantiles
+(prefer small intervals with high coverage). \textbf{CRPS} is the continuous
+ranked probability score of the entire forecast distribution (smaller is
+better). The best (smallest) values of MAE, SIZE, and CRPS are bolded for each
+variable.}
+\label{tab:crime}
+\end{table}
+
+\clearpage
+
+% =============================================================================
+\subsection{US macroeconomic aggregates}
+
+\begin{splice}{INSERT, new paragraph, after the Figure 7 discussion (p.~27--28).}
+
+\paper{Figure 7 displays summaries of the parameter inferences in our model.
+Again, the DGFC captures the non-Gaussian marginals and provides reasonable
+uncertainty quantification. The estimated latent correlations identify high
+positive associations the real economic activity variables (output,
+productivity, etc) \dots These stylized results match various basic economic
+intuitions about the dependence structure of these variables.}
+
+\medskip
+Repeating the ablation of Section~\ref{sec:crime} on the macroeconomic data
+(Figure~\ref{fig:ablation}, right, and Table~\ref{tab:ablation}) yields a
+stronger version of the same result. Freezing the margins at the empirical CDF
+narrows the intervals on eleven of the fourteen series and drops mean coverage
+from 0.946 to 0.914, more than twice the deterioration observed on the crime
+counts. Density forecasts divide by variable type. On eight of the ten growth
+rates the frozen margin is the better of the two, by as much as nine percent,
+while on capacity utilization, the unemployment rate and the federal funds rate
+it is worse by 37, 99 and 69 percent respectively. The three series on which it
+fails badly are levels---bounded and highly persistent, and therefore precisely
+the series for which the observed range over a training window is least
+informative about the support of the predictive distribution. Inferring the
+margins is thus not uniformly better on these data. It costs little where the
+empirical CDF is adequate and helps substantially where it is not.
+
+\end{splice}
+
+% "high positive associations the real economic activity variables" in the grey
+% block is missing a word. Worth fixing while that page is open.
+
+% Figure 8 follows existing Figure 7 and precedes Figure 9 in citation order.
+\setcounter{figure}{7}
+\begin{figure}[!htbp]
+\centering
+\infig{fig_ablation}
+\caption{Empirical coverage of the 95\% forecast intervals under the margin
+adjustment and under a margin frozen at the empirical CDF, for the crime counts
+(left) and the macroeconomic aggregates (right). Both arms come from the same
+posterior fit at each forecast origin, so the only difference is the treatment
+of the margin. The dashed line is nominal coverage.}
+\label{fig:ablation}
+\end{figure}
+
+% Set counter to 4 so standalone caption renders as Table 5; in the master
+% manuscript, place this float at the end of Section 7.2 after Tables 3 and 4.
+\setcounter{table}{4}
+\begin{table}[!htbp]
+\centering\small
+\intab{tab_ablation}
+\caption{The empirical CDF ablation, pooled over series within each
+application. Width is the mean change in 95\% interval length when the margin
+is frozen, so a negative figure means the frozen margin is sharper.}
+\label{tab:ablation}
+\end{table}
+
+\begin{splice}{REPLACES the whole paragraph on p.~28, expanding one paragraph
+into four.}
+
+\paper{Table 2 displays the one-step ahead forecasting results, averaged over
+the period 1985Q1 ($t_0$) to 2014Q1 ($T$). Across all variables, the DGFC
+delivers the smallest forecasting intervals---often by a wide margin---with
+close to nominal (95\%) coverage. By contrast, the DLM and BVAR are excessively
+conservative. Similarly favorable results are observed for density forecasting,
+with CRPS preferring DGFC for the majority of variables. Point forecasting
+performance tends to favor the DLM, although the DGFC remains competitive. These
+results suggest that the DGFC may be most useful for interval and density
+forecasting, both of which are essential for probabilistic uncertainty
+quantification.}
+
+\medskip
+% Three claims in the grey block no longer hold. "Across all variables" is now
+% eleven of fourteen on SIZE. "Point forecasting tends to favor the DLM" is
+% reversed. And the closing sentence is the one the SV-BVAR tie complicates.
+Table~\ref{tab:macro} displays the one-step-ahead forecasting results, averaged
+over the period 1985Q1 ($t_0$) to 2014Q1 ($T$), and Figure~\ref{fig:sharpness}
+summarizes the interval forecasts according to the principle of maximizing
+sharpness subject to calibration \citep{gneiting2007}. Against the BVAR and the
+DLM, the picture is much the same as for the crime counts. The DGFC delivers
+the smallest interval forecasts---often by a wide margin---with close to
+nominal coverage, while the BVAR covers at unity on every series and the DLM
+remains excessively conservative. Density forecasts favor the DGFC over the
+BVAR on all fourteen series and over the DLM on twelve, with neither competitor
+significantly better on any. Point forecasting, which in earlier versions of
+this exercise tended to favor the DLM, now favors the DGFC on eight of the
+fourteen series, a reversal consistent with saturating the factor dimension
+(Section~\ref{sec:priors}) and concentrated in the level variables.
+
+The SV-BVAR is the more demanding comparison, and against it the result is a
+draw rather than a win. Our approach produces narrower intervals on eleven of
+the fourteen series, with mean coverage nearer the nominal level, and point
+accuracy divides evenly between the two. On density forecasts the two methods
+are statistically indistinguishable on twelve of the fourteen series by a
+Diebold--Mariano test on the per-vintage CRPS differentials
+(Table~\ref{tab:dm}); the SV-BVAR is significantly better on the remaining two,
+and our approach on none. That the DGFC should hold its own against a model
+with time-varying volatility---a prominent feature of macroeconomic data, and
+one the DGFC makes no attempt to capture---suggests that much of what it gains
+in this exercise comes from the non-Gaussian margins and the latent dependence
+structure rather than from conditional heteroskedasticity.
+
+The two series on which the SV-BVAR prevails, the yield spread and the federal
+funds rate, are levels rather than growth rates, and the pattern extends to the
+remaining level variables. The SV-BVAR's CRPS advantage is positive for all four
+levels in every subperiod of the sample, while on the ten growth rates the two
+methods trade places. Nor is the advantage driven by volatile episodes, being
+smallest over 2007--2009.
+
+A plausible explanation is that these are the most persistent series in the
+cross-section, and that our model is stationary by construction where the
+SV-BVAR is not. Discarding the SV-BVAR's explosive autoregressive draws does not
+render that model stationary, since its innovation variances remain free to
+wander, whereas the DGFC enjoys no comparable latitude. The restriction is
+visibly binding on both sides---the SV-BVAR retains a median of 2{,}828 of its
+5{,}000 draws, and fewer than half of them at 47 of the 116 vintages, while the
+DGFC's factor VAR sits at a mean spectral radius of 0.977 across the
+posterior---but only one of the two models is obliged to remain inside it. Lag
+order is a secondary difference, in that~(6) restricts the latent factor VAR to
+a single lag. We leave a more flexible specification to future work; as matters
+stand, the cost of the restriction is confined to two of fourteen series.
+
+\end{splice}
+
+\begin{figure}[!htbp]
+\centering
+\infig{fig_sharpness}
+\caption{Sharpness against calibration for the fourteen macroeconomic series.
+Each point is one series under one model. The horizontal position is the average
+95\% interval width relative to the DGFC's width for that series, on a log
+scale, and the vertical position is empirical coverage. Sharper is to the left
+and calibrated is on the dashed line, so the preferred region is to the left
+along that line. Widths are normalized because the series differ in scale by
+three orders of magnitude.}
+\label{fig:sharpness}
+\end{figure}
+
+\setcounter{table}{2}
+\begin{table}[!htbp]
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\intab{tab_macro}
+\caption{One-quarter-ahead forecast metrics for the macroeconomic data in
+Figure~2, averaged over the period 1985Q1 to 2014Q1. \textbf{MSE} is the mean
+squared error of the posterior predictive mean (smaller is better).
+\textbf{COV}, \textbf{SIZE}, and \textbf{CRPS} are defined in
+Table~\ref{tab:crime}. The best (smallest) values of MSE, SIZE, and CRPS are
+bolded for each variable.}
+\label{tab:macro}
+\end{table}
+
+\begin{table}[!htbp]
+\centering\small
+\intab{tab_dm}
+\caption{Diebold--Mariano tests on the CRPS differential against each
+competitor, computed with Newey--West standard errors. Negative means the DGFC
+is better. Entries are significant at the 5\% level unless set in italic and marked
+$^{\dagger}$, so the daggers locate the comparisons the test cannot separate.
+The macroeconomic differentials are per vintage, the crime differentials per
+forecast origin.}
+\label{tab:dm}
+\end{table}
+
+\clearpage
+
+% =============================================================================
+% STRIP BELOW THIS LINE
+% =============================================================================
+
+\section*{One open decision}
+
+Whether the 6.1 mixing caveat sits in the body or the appendix. Professor Kowal 
+noted not to over-advertise MCMC efficiency cuts in favor of stating it somewhere. 
+The short version is in 6.1 above, while the longer version, which says what the 
+mixing costs, is below. Let me know what you both think of my edits and insertions.
+
+\begin{quote}
+One caveat applies to the credible bands at the largest sample size. The
+truncation intervals in the latent sampling step narrow as the observations fill
+in, so the MCMC budget required for the margin posterior grows with $T$ while
+the budget required for the predictive does not. At the default 10{,}000 sweeps
+the band at $T = 200$ covers the true stationary CDF between 79 and 93 percent
+of the time depending on the DGP, rising to between 86 and 96 percent at
+160{,}000 sweeps and still widening. The posterior mean is unaffected, and so
+are the forecasts, whose interval coverage at $T = 200$ runs between 0.925 and
+0.975 on the same fits. The default is adequate for every result reported here;
+credible bands for $F$ at $T = 200$ are not among them.
+\end{quote}
+
+\section*{New BibTeX entries}
+
+\begin{verbatim}
+@article{diebold1995,
+  author  = {Diebold, Francis X. and Mariano, Roberto S.},
+  title   = {Comparing Predictive Accuracy},
+  journal = {Journal of Business \& Economic Statistics},
+  year    = {1995},
+  volume  = {13},
+  number  = {3},
+  pages   = {253--263}
+}
+
+@article{gneiting2007,
+  author  = {Gneiting, Tilmann and Balabdaoui, Fadoua and Raftery, Adrian E.},
+  title   = {Probabilistic Forecasts, Calibration and Sharpness},
+  journal = {Journal of the Royal Statistical Society: Series B},
+  year    = {2007},
+  volume  = {69},
+  number  = {2},
+  pages   = {243--268},
+  doi     = {10.1111/j.1467-9868.2007.00587.x}
+}
+
+@article{gruber2025,
+  author  = {Gruber, Luis and Kastner, Gregor},
+  title   = {Forecasting Macroeconomic Data with Bayesian {VAR}s: Sparse or Dense? {I}t Depends!},
+  journal = {International Journal of Forecasting},
+  year    = {2025},
+  volume  = {41},
+  number  = {4},
+  pages   = {1589--1619},
+  doi     = {10.1016/j.ijforecast.2025.02.001}
+}
+
+@manual{bayesianVARs,
+  author = {Gruber, Luis and Haan, Stefan and Kastner, Gregor},
+  title  = {bayesianVARs: {MCMC} Estimation of Bayesian Vectorautoregressions},
+  year   = {2026},
+  note   = {R package},
+  doi    = {10.32614/CRAN.package.bayesianVARs}
+}
+\end{verbatim}
+
+% gneiting2007 was the JASA scoring-rules paper, which is a different article.
+% The sentence citing it is about maximizing sharpness subject to calibration,
+% which is the JRSS-B paper above. If CRPS is cited anywhere else on merge,
+% that one does want Gneiting and Raftery (2007), JASA 102(477), 359-378.
+
+\end{document}
