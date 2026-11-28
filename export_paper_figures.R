@@ -286,6 +286,29 @@ dev.off()
 cat("wrote ", file.path(FIG_DIR, "fig_ablation.pdf"), "\n", sep = "")
 
 # ==============================================================================
+# Newey-West t on the CRPS differential
+# ==============================================================================
+
+mcomp <- c("BVAR", "DLM", "SV-BVAR")
+oth   <- list(BVAR = m$var[, 4, ], DLM = m$dlm[, 4, ], `SV-BVAR` = m$svbvar[, 4, ])
+nsm   <- length(m$var_names)
+tm <- vapply(mcomp, function(cm)
+  vapply(seq_len(nsm), function(i) nw_t(m$dfc[, 4, i] - oth[[cm]][, i]), numeric(1)),
+  numeric(nsm))
+
+ccomp <- c("BVAR", "Pois-DGLM", "NB-DGLM")
+tc <- NULL
+if (file.exists(CRIME_CACHE)) {
+  cc  <- readRDS(CRIME_CACHE)
+  nsc <- length(cc$labs)
+  tc  <- vapply(ccomp, function(cm)
+    vapply(seq_len(nsc), function(i) nw_t(cc$crps[, "DGFC", i] - cc$crps[, cm, i]),
+           numeric(1)), numeric(nsc))
+} else {
+  cat("NOTE: ", CRIME_CACHE, " absent; Table 2 gets no marks.\n", sep = "")
+}
+
+# ==============================================================================
 # 5. Tables 1 and 2: the published two-up block layout
 # ==============================================================================
 
@@ -297,10 +320,23 @@ fmt_col <- function(x, dg, bold = TRUE) {
   s
 }
 
+# CRPS column: bold the best as before, then mark any competitor the test
+# cannot separate from the DGFC. tt is NA on the DGFC row itself.
+fmt_crps <- function(x, dg, tt) {
+  s <- fmt_col(x, dg)
+  u <- !is.na(tt) & abs(tt) <= CRIT
+  s[u] <- paste0("\\textit{", s[u], "}$^{\\dagger}$")
+  s[!u] <- paste0(s[!u], "$^{\\phantom{\\dagger}}$")
+  s
+}
+
 # one block of four model rows for one series, as a character matrix
 block <- function(M, mods, dg, boldcol) {
-  cells <- vapply(seq_len(ncol(M)),
-                  function(j) fmt_col(M[, j], dg[j], boldcol[j]), character(nrow(M)))
+  tt <- attr(M, "t")
+  cells <- vapply(seq_len(ncol(M)), function(j) {
+    if (j == 4L && !is.null(tt)) fmt_crps(M[, j], dg[j], tt)
+    else                         fmt_col(M[, j], dg[j], boldcol[j])
+  }, character(nrow(M)))
   cbind(mods, cells)
 }
 
@@ -338,8 +374,13 @@ if (file.exists(CRIME_LAB)) {
   
   grab <- function(s) {
     b <- cl[cl$series == s, ]
-    b <- b[match(cmods, b$model), c("MAE", "COV", "SIZE", "CRPS")]
-    as.matrix(b)
+    M <- as.matrix(b[match(cmods, b$model), c("MAE", "COV", "SIZE", "CRPS")])
+    if (!is.null(tc)) {
+      i <- match(s, cc$labs)
+      if (!is.na(i))
+        attr(M, "t") <- c(NA, tc[i, "BVAR"], tc[i, "Pois-DGLM"], tc[i, "NB-DGLM"])
+    }
+    M
   }
   half <- length(csrs) / 2
   wr(two_up(lapply(csrs[1:half],               grab),
@@ -356,59 +397,15 @@ if (file.exists(CRIME_LAB)) {
 mmods <- c("DGFC", "BVAR", "DLM", "SV-BVAR")
 gm <- function(i) {
   M <- rbind(f$dfc[i, ], f$var[i, ], f$dlm[i, ], f$svbvar[i, ])[, c(1, 2, 3, 4)]
-  colnames(M) <- c("MSE", "COV", "SIZE", "CRPS"); M
+  colnames(M) <- c("MSE", "COV", "SIZE", "CRPS")
+  attr(M, "t") <- c(NA, tm[i, "BVAR"], tm[i, "DLM"], tm[i, "SV-BVAR"])
+  M
 }
 odd <- seq(1, length(m$var_names), by = 2)
 wr(two_up(lapply(odd, gm), lapply(odd + 1, gm),
           MFULL[m$var_names[odd]], MFULL[m$var_names[odd + 1]],
           mmods, c(2, 3, 2, 3), c(TRUE, FALSE, TRUE, TRUE),
           "@{}lrrrr@{\\qquad}lrrrr@{}"), "tab_macro.tex", 10)
-
-# ==============================================================================
-# 6. Table 3: Newey-West t on the CRPS differential, both applications
-# ==============================================================================
-
-# braces are load-bearing: without them R ends the function at the first line
-# and the dangling `else` is a syntax error
-tfmt <- function(x) {
-  if (is.na(x)) "--"
-  else if (abs(x) <= CRIT) sprintf("\\textit{%.2f}$^{\\dagger}$", x)
-  else sprintf("%.2f", x)
-}
-
-mcomp <- c("BVAR", "DLM", "SV-BVAR")
-oth   <- list(BVAR = m$var[, 4, ], DLM = m$dlm[, 4, ], `SV-BVAR` = m$svbvar[, 4, ])
-nsm   <- length(m$var_names)
-tm <- vapply(mcomp, function(cm)
-  vapply(seq_len(nsm), function(i) nw_t(m$dfc[, 4, i] - oth[[cm]][, i]), numeric(1)),
-  numeric(nsm))
-
-rows <- c("\\begin{tabular}{@{}lrrr@{}}", "\\toprule",
-          "\\multicolumn{4}{@{}l}{\\textit{Macroeconomic aggregates}} \\\\",
-          "series & vs BVAR & vs DLM & vs SV-BVAR \\\\", "\\midrule",
-          sprintf("%-22s & %s & %s & %s \\\\", MTAB[m$var_names],
-                  vapply(tm[, 1], tfmt, ""), vapply(tm[, 2], tfmt, ""),
-                  vapply(tm[, 3], tfmt, "")))
-
-tc <- NULL
-if (file.exists(CRIME_CACHE)) {
-  cc    <- readRDS(CRIME_CACHE)
-  ccomp <- c("BVAR", "Pois-DGLM", "NB-DGLM")
-  nsc   <- length(cc$labs)
-  tc <- vapply(ccomp, function(cm)
-    vapply(seq_len(nsc), function(i) nw_t(cc$crps[, "DGFC", i] - cc$crps[, cm, i]),
-           numeric(1)), numeric(nsc))
-  rows <- c(rows, "\\addlinespace", "\\midrule",
-            "\\multicolumn{4}{@{}l}{\\textit{Crime counts}} \\\\",
-            "series & vs BVAR & vs P-DGLM & vs NB-DGLM \\\\", "\\midrule",
-            sprintf("%-22s & %s & %s & %s \\\\", CFULL[cc$labs],
-                    vapply(tc[, 1], tfmt, ""), vapply(tc[, 2], tfmt, ""),
-                    vapply(tc[, 3], tfmt, "")))
-} else {
-  cat("NOTE: ", CRIME_CACHE, " absent, so tab_dm.tex has the macro panel only.\n",
-      "      Knit results_summary.Rmd once to build it.\n", sep = "")
-}
-wr(c(rows, "\\bottomrule", "\\end{tabular}"), "tab_dm.tex", 4)
 
 # ==============================================================================
 # 7. Table 4: ECDF ablation, pooled

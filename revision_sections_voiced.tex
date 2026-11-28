@@ -370,7 +370,9 @@ length of 95\% credible intervals based on posterior predictive quantiles
 (prefer small intervals with high coverage). \textbf{CRPS} is the continuous
 ranked probability score of the entire forecast distribution (smaller is
 better). The best (smallest) values of MAE, SIZE, and CRPS are bolded for each
-variable.}
+variable. A CRPS set in italic and marked $^{\dagger}$ is one that a 
+Diebold--Mariano test on the per-origin CRPS differentials, with Newey--West 
+standard errors, cannot separate from the DGFC at the 5\% level.}
 \label{tab:crime}
 \end{table}
 
@@ -523,22 +525,24 @@ three orders of magnitude.}
 Figure~2, averaged over the period 1985Q1 to 2014Q1. \textbf{MSE} is the mean
 squared error of the posterior predictive mean (smaller is better).
 \textbf{COV}, \textbf{SIZE}, and \textbf{CRPS} are defined in
-Table~\ref{tab:crime}. The best (smallest) values of MSE, SIZE, and CRPS are
-bolded for each variable.}
+Table~\ref{tab:crime}. The best (smallest) values of MSE, SIZE, and CRPS are 
+bolded for each variable. A CRPS set in italic and marked $^{\dagger}$ is one 
+that a Diebold--Mariano test on the per-vintage CRPS differentials, with 
+Newey--West standard errors, cannot separate from the DGFC at the 5\% level.}
 \label{tab:macro}
 \end{table}
 
-\begin{table}[!htbp]
-\centering\small
-\intab{tab_dm}
-\caption{Diebold--Mariano tests on the CRPS differential against each
-competitor, computed with Newey--West standard errors. Negative means the DGFC
-is better. Entries are significant at the 5\% level unless set in italic and marked
-$^{\dagger}$, so the daggers locate the comparisons the test cannot separate.
-The macroeconomic differentials are per vintage, the crime differentials per
-forecast origin.}
-\label{tab:dm}
-\end{table}
+% \begin{table}[!htbp]
+% \centering\small
+% \intab{tab_dm}
+% \caption{Diebold--Mariano tests on the CRPS differential against each
+% competitor, computed with Newey--West standard errors. Negative means the DGFC
+% is better. Entries are significant at the 5\% level unless set in italic and marked
+% $^{\dagger}$, so the daggers locate the comparisons the test cannot separate.
+% The macroeconomic differentials are per vintage, the crime differentials per
+% forecast origin.}
+% \label{tab:dm}
+% \end{table}
 
 \clearpage
 
